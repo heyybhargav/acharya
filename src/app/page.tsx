@@ -151,7 +151,7 @@ export default function HomePage() {
                       <div className="flex flex-wrap gap-1 mt-2">
                         {nb.topics.slice(0, 2).map((t, i) => (
                           <span key={i} className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md line-clamp-1 max-w-[130px]">
-                            {t}
+                            {t.title}
                           </span>
                         ))}
                       </div>

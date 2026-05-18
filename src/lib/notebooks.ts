@@ -1,16 +1,42 @@
 // Notebook persistence via localStorage
 // No database needed — all session data lives in the browser
 
+export interface NotebookSegment {
+  text: string;
+  startMs: number;
+  durationMs: number;
+}
+
+export interface NotebookTopic {
+  title: string;
+  summary?: string;
+}
+
 export interface Notebook {
   id: string;
   title: string;          // Derived from first topic or source URL
   source: 'youtube' | 'file' | 'text';
   sourceUrl?: string;     // YouTube URL if applicable
   transcript: string;
-  topics: string[];
+  segments?: NotebookSegment[]; // present when source provides timestamps (YouTube)
+  topics: NotebookTopic[];
   createdAt: string;
   lastAccessedAt: string;
   wordCount: number;
+}
+
+export function normalizeTopics(raw: unknown): NotebookTopic[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(item => {
+    if (typeof item === 'string') return { title: item };
+    if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>;
+      const title = typeof obj.title === 'string' ? obj.title : String(obj.title ?? '');
+      const summary = typeof obj.summary === 'string' ? obj.summary : undefined;
+      if (title) return { title, summary };
+    }
+    return { title: String(item ?? '') };
+  }).filter(t => t.title.length > 0);
 }
 
 const STORAGE_KEY = 'acharya_notebooks';
@@ -24,7 +50,11 @@ export function getNotebooks(): Notebook[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    return JSON.parse(raw) as Notebook[];
+    const parsed = JSON.parse(raw) as unknown[];
+    return parsed.map((nb) => {
+      const n = nb as Notebook;
+      return { ...n, topics: normalizeTopics(n.topics) };
+    });
   } catch {
     return [];
   }
@@ -53,11 +83,12 @@ export function saveNotebook(notebook: Notebook): Notebook {
 
 export function createNotebook(
   transcript: string,
-  topics: string[],
+  topics: NotebookTopic[],
   source: Notebook['source'],
-  sourceUrl?: string
+  sourceUrl?: string,
+  segments?: NotebookSegment[],
 ): Notebook {
-  const title = topics[0] || (sourceUrl ? new URL(sourceUrl).hostname : 'Untitled notebook');
+  const title = topics[0]?.title || (sourceUrl ? new URL(sourceUrl).hostname : 'Untitled notebook');
   const now = new Date().toISOString();
   const notebook: Notebook = {
     id: generateId(),
@@ -65,6 +96,7 @@ export function createNotebook(
     source,
     sourceUrl,
     transcript,
+    segments,
     topics,
     createdAt: now,
     lastAccessedAt: now,

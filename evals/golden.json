@@ -1,0 +1,37 @@
+{
+  "lessons": [
+    {
+      "name": "photosynthesis-en",
+      "language": "en",
+      "transcript": "Photosynthesis is the process by which green plants and some other organisms use sunlight to synthesize foods from carbon dioxide and water. The process begins when light photons strike the leaf and are absorbed by chlorophyll molecules located in the thylakoid membranes of chloroplasts. Chlorophyll a absorbs primarily blue and red wavelengths and reflects green light, which is why leaves appear green to our eyes.\n\nThe light-dependent reactions take place inside the thylakoid membrane. Water molecules are split by photosystem two, releasing oxygen as a byproduct and providing electrons that travel down the electron transport chain. This chain pumps protons across the membrane, generating a gradient that powers ATP synthase to make ATP. Photosystem one re-energises the electrons and uses them to reduce NADP plus to NADPH.\n\nThe Calvin cycle, also called the light-independent reactions, happens in the stroma of the chloroplast. The enzyme rubisco fixes carbon dioxide onto a five carbon sugar called ribulose bisphosphate. The resulting six carbon compound immediately splits into two three carbon molecules called 3-PGA. ATP and NADPH from the light reactions are used to convert 3-PGA into G3P, which is then used to build glucose and other sugars.\n\nFactors that affect the rate of photosynthesis include light intensity, carbon dioxide concentration, and temperature. At low light intensities, the rate of photosynthesis is directly proportional to the amount of light available. At very high temperatures, the rubisco enzyme starts to denature and the plant cannot fix carbon efficiently. C4 and CAM plants evolved special adaptations to deal with hot dry climates by concentrating carbon dioxide before the Calvin cycle.",
+      "queries": [
+        { "q": "what pigment is responsible for capturing light?", "expectAllOf": ["chlorophyll"] },
+        { "q": "where does the Calvin cycle take place?", "expectAllOf": ["stroma"] },
+        { "q": "what enzyme fixes carbon dioxide?", "expectAllOf": ["rubisco"] },
+        { "q": "how do plants in hot climates handle high temperatures?", "expectAnyOf": ["C4", "CAM", "denature"] },
+        { "q": "what gas is released when water is split?", "expectAllOf": ["oxygen"] }
+      ]
+    },
+    {
+      "name": "photosynthesis-hi",
+      "language": "hi",
+      "transcript": "प्रकाश संश्लेषण वह प्रक्रिया है जिसके द्वारा हरे पौधे सूर्य के प्रकाश का उपयोग करके कार्बन डाइऑक्साइड और पानी से भोजन बनाते हैं। यह प्रक्रिया तब शुरू होती है जब प्रकाश की किरणें पत्ती पर पड़ती हैं और क्लोरोफिल अणुओं द्वारा अवशोषित होती हैं।\n\nप्रकाश पर निर्भर अभिक्रियाएँ थायलाकॉइड झिल्ली के अंदर होती हैं। पानी के अणु फोटोसिस्टम दो द्वारा विभाजित होते हैं, जिससे ऑक्सीजन एक उपोत्पाद के रूप में निकलती है और इलेक्ट्रॉन प्राप्त होते हैं जो इलेक्ट्रॉन परिवहन श्रृंखला से होकर गुजरते हैं।\n\nकैल्विन चक्र क्लोरोप्लास्ट के स्ट्रोमा में होता है। एंजाइम रुबिस्को कार्बन डाइऑक्साइड को राइबुलोज बिस्फॉस्फेट नामक पांच कार्बन की शर्करा पर स्थिर करता है। एटीपी और एनएडीपीएच का उपयोग 3 पीजीए को जी3पी में बदलने के लिए किया जाता है, जिससे बाद में ग्लूकोज बनता है।",
+      "queries": [
+        { "q": "कैल्विन चक्र कहाँ होता है", "expectAllOf": ["स्ट्रोमा"] },
+        { "q": "कौन सा एंजाइम कार्बन डाइऑक्साइड को स्थिर करता है", "expectAllOf": ["रुबिस्को"] },
+        { "q": "पानी के विभाजन से कौन सी गैस निकलती है", "expectAllOf": ["ऑक्सीजन"] }
+      ]
+    },
+    {
+      "name": "founder-talk-en",
+      "language": "en",
+      "transcript": "Most early stage founders worry about competition far too much. Investors rarely fund a company because it has no competitors. They fund it because the team has earned the right to win against the competitors that already exist. Pretending no one else is in the space is usually a sign of either laziness or self-deception.\n\nThe single most underestimated lever in early stage growth is talking to users. Founders confuse building with progress. You can spend six months making a beautiful product that no one needs, and then convince yourself the problem is the marketing. The problem is almost never the marketing. The problem is that you have not done the unscalable work of figuring out what one person desperately wants.\n\nHiring before product market fit is the most expensive form of procrastination. Every hire adds coordination cost, runway pressure, and management overhead that the founder pays even when they think they are saving time. A team of three that ship every day will outpace a team of fifteen that ship every two weeks.\n\nFundraising should be treated as a tool, not a milestone. Money in the bank does not change the question of whether the product works. It only buys time to find out. Founders who treat each round as a coronation often confuse capital with traction, and they discover the truth far too late.",
+      "queries": [
+        { "q": "should I worry about competitors at the early stage?", "expectAnyOf": ["competition", "competitor"] },
+        { "q": "what is the most underused growth lever?", "expectAllOf": ["talking to users"] },
+        { "q": "is hiring early a good idea?", "expectAnyOf": ["hiring", "procrastination"] },
+        { "q": "how should founders think about fundraising?", "expectAnyOf": ["fundraising", "capital", "tool"] }
+      ]
+    }
+  ]
+}

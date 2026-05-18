@@ -3,14 +3,15 @@
 import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
-import { getNotebook, createNotebook, updateNotebook, Notebook } from '@/lib/notebooks';
+import { getNotebook, createNotebook, updateNotebook, type NotebookSegment } from '@/lib/notebooks';
+import { useLessonRag } from '@/lib/rag/use-lesson-rag';
+import { AudioSequence, fetchTtsAudios, playChunkSequence } from '@/lib/audio-sequence';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { 
-  Mic, Square, BrainCircuit, FileText, Upload, 
+import {
+  Mic, Square, BrainCircuit, FileText, Upload,
   Volume2, User, Loader2, Video, BookOpen, Headphones, Trophy, ArrowRight, X, Play, Pause, ChevronLeft, Menu
 } from 'lucide-react';
 
@@ -27,17 +28,20 @@ function LearnPageInner() {
   const searchParams = useSearchParams();
   const notebookId = searchParams.get('id');
 
-  const { 
-    transcript, setTranscript, 
-    topics, setTopics, 
-    messages, addMessage, clearMessages,
-    quizActive, setQuizActive, 
-    quizData, setQuizData 
+  const {
+    transcript, setTranscript,
+    topics, setTopics,
+    messages, addMessage, updateMessage, clearMessages,
+    quizActive, setQuizActive,
+    quizData, setQuizData
   } = useAppStore();
 
   const [currentNotebookId, setCurrentNotebookId] = useState<string | null>(notebookId);
   const [notebookTitle, setNotebookTitle] = useState<string>('New lesson');
+  const [segments, setSegments] = useState<NotebookSegment[] | undefined>(undefined);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  const lessonRag = useLessonRag(currentNotebookId, transcript, segments);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,6 +56,8 @@ function LearnPageInner() {
   const [hasSubmittedQuizAnswer, setHasSubmittedQuizAnswer] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionProgress, setTranscriptionProgress] = useState('');
+  const [processingPhase, setProcessingPhase] = useState<'transcribing' | 'searching' | 'thinking' | 'streaming' | 'speaking' | null>(null);
+  const [expandedTopicIndex, setExpandedTopicIndex] = useState<number | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [isFetchingYoutube, setIsFetchingYoutube] = useState(false);
   const [isHandsFree, setIsHandsFree] = useState(false);
@@ -61,9 +67,45 @@ function LearnPageInner() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentSequenceRef = useRef<AudioSequence | null>(null);
   const chatScrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const indexingView = () => {
+    const status = lessonRag.status;
+    if (!status || status.phase === 'done') return null;
+    let headline = 'Preparing this lesson';
+    let detail = '';
+    let percent: number | null = null;
+    if (status.phase === 'chunking') {
+      headline = 'Splitting transcript into passages';
+    } else if (status.phase === 'embedding') {
+      headline = 'Indexing passages';
+      const loaded = status.loaded;
+      const total = status.total ?? 0;
+      if (loaded != null && total > 0) {
+        detail = `${loaded} / ${total}`;
+        percent = (loaded / total) * 100;
+      } else if (total > 0) {
+        detail = `Embedding ${total} passages…`;
+        // percent stays null so the bar shows the indeterminate pulse
+      }
+    } else if (status.phase === 'indexing') {
+      headline = 'Building keyword index';
+    }
+    return { headline, detail, percent };
+  };
+
+  const phaseLabel = (phase: 'transcribing' | 'searching' | 'thinking' | 'streaming' | 'speaking' | null | undefined): string => {
+    switch (phase) {
+      case 'transcribing': return 'Transcribing your voice';
+      case 'searching': return 'Searching the lesson';
+      case 'thinking': return 'Thinking through your question';
+      case 'streaming': return 'Writing';
+      case 'speaking': return 'Speaking';
+      default: return '';
+    }
+  };
 
   const scrollToBottom = () => {
     if (chatScrollContainerRef.current) {
@@ -87,12 +129,13 @@ function LearnPageInner() {
         setTopics(nb.topics);
         setNotebookTitle(nb.title);
         setCurrentNotebookId(nb.id);
+        setSegments(nb.segments);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notebookId]);
 
-  // Auto-save notebook whenever transcript or topics change
+  // Auto-save notebook whenever transcript or topics change; auto-create on first paste
   useEffect(() => {
     if (!transcript) return;
     const saveTimer = setTimeout(() => {
@@ -101,43 +144,58 @@ function LearnPageInner() {
           transcript,
           topics,
           wordCount: transcript.split(/\s+/).filter(Boolean).length,
-          title: topics[0] || notebookTitle,
+          title: topics[0]?.title || notebookTitle,
         });
+      } else {
+        const nb = createNotebook(transcript, topics, 'text');
+        setCurrentNotebookId(nb.id);
+        setNotebookTitle(nb.title);
+        router.replace(`/learn?id=${nb.id}`, { scroll: false });
       }
     }, 1500);
     return () => clearTimeout(saveTimer);
-  }, [transcript, topics, currentNotebookId, notebookTitle]);
+  }, [transcript, topics, currentNotebookId, notebookTitle, router]);
 
   useEffect(() => {
     isHandsFreeRef.current = isHandsFree;
   }, [isHandsFree]);
 
-  const stopActiveAudio = () => {
-    if (currentAudioRef.current) {
-      try {
-        currentAudioRef.current.pause();
-        currentAudioRef.current.src = "";
-        currentAudioRef.current.load();
-      } catch (e) {
-        console.error("Error stopping active audio:", e);
-      }
-      currentAudioRef.current = null;
+  const stopActiveAudio = useCallback(() => {
+    if (currentSequenceRef.current) {
+      currentSequenceRef.current.abort();
+      currentSequenceRef.current = null;
     }
     setIsPlaying(false);
     setIsPaused(false);
     setActivePlayingMessageId(null);
-  };
+  }, []);
 
   const handleTogglePlayPause = () => {
-    if (currentAudioRef.current) {
-      if (isPaused) {
-        currentAudioRef.current.play();
-        setIsPaused(false);
-      } else {
-        currentAudioRef.current.pause();
-        setIsPaused(true);
-      }
+    const seq = currentSequenceRef.current;
+    if (!seq) return;
+    if (seq.isPaused()) {
+      seq.resume();
+      setIsPaused(false);
+    } else {
+      seq.pause();
+      setIsPaused(true);
     }
+  };
+
+  const playAudioChunks = (chunks: string[], messageId: string | null = null) => {
+    if (!chunks || chunks.length === 0) return;
+    stopActiveAudio();
+    setIsPlaying(true);
+    setIsPaused(false);
+    setActivePlayingMessageId(messageId);
+    const seq = playChunkSequence(chunks, {
+      onEnd: () => {
+        setIsPlaying(false);
+        setIsPaused(false);
+        setActivePlayingMessageId(null);
+      },
+    });
+    currentSequenceRef.current = seq;
   };
 
   const startRecording = async () => {
@@ -315,7 +373,7 @@ function LearnPageInner() {
             silenceStart = null; // Reset silence timer
             
             // 1. Interrupt TTS instantly if user starts speaking
-            if (isPlayingRef.current && currentAudioRef.current) {
+            if (isPlayingRef.current && currentSequenceRef.current) {
               stopActiveAudio();
             }
 
@@ -408,70 +466,151 @@ function LearnPageInner() {
 
   const processAudio = async (audioBlob: Blob) => {
     setIsProcessing(true);
+    stopActiveAudio();
+
+    const userMsgId = Date.now().toString() + '-u';
+    const tutorMsgId = Date.now().toString() + '-t';
+
+    // Phase 1: Show user bubble immediately with a transcribing placeholder
+    setProcessingPhase('transcribing');
+    addMessage({ id: userMsgId, role: 'user', text: '', phase: 'transcribing' });
+
     try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'audio.webm');
-      formData.append('transcript', transcript);
-      formData.append('history', JSON.stringify(messages));
+      const sttForm = new FormData();
+      sttForm.append('audio', audioBlob, 'audio.webm');
+      const sttRes = await fetch('/api/tutor/stt', { method: 'POST', body: sttForm });
+      if (!sttRes.ok) {
+        const err = await sttRes.json().catch(() => ({ error: 'STT failed' }));
+        throw new Error(err.error || 'STT failed');
+      }
+      const { userMessage } = await sttRes.json();
+      if (!userMessage) throw new Error('Could not transcribe your audio');
 
-      const res = await fetch('/api/tutor/voice', {
-        method: 'POST',
-        body: formData,
+      updateMessage(userMsgId, { text: userMessage, phase: undefined });
+
+      // Phase 2: Retrieval (client side, fast but worth signalling)
+      if (!lessonRag.ready) {
+        throw new Error(lessonRag.error || 'Lesson is still indexing. One moment.');
+      }
+      setProcessingPhase('searching');
+      addMessage({
+        id: tutorMsgId,
+        role: 'tutor',
+        text: '',
+        audioChunks: [],
+        phase: 'searching',
       });
+      const retrieval = await lessonRag.runRetrieval(userMessage);
+      if (!retrieval) throw new Error('Retrieval failed');
+      updateMessage(tutorMsgId, { groundingConfidence: retrieval.groundingConfidence });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: 'Voice API failed' }));
-        throw new Error(errData.error || 'Voice API failed');
+      // Phase 3: LLM request out, waiting for first token
+      setProcessingPhase('thinking');
+      updateMessage(tutorMsgId, { phase: 'thinking' });
+
+      const history = messages
+        .filter(m => m.text)
+        .map(m => ({
+          role: m.role === 'tutor' ? ('assistant' as const) : ('user' as const),
+          content: m.text,
+        }));
+
+      const chatRes = await fetch('/api/tutor/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userMessage,
+          chunks: retrieval.chunks.map(c => ({ index: c.index, text: c.text, startMs: c.startMs, endMs: c.endMs })),
+          history,
+          groundingConfidence: retrieval.groundingConfidence,
+        }),
+      });
+      if (!chatRes.ok || !chatRes.body) {
+        throw new Error('Chat stream failed');
       }
 
-      const data = await res.json();
-      
-      if (data.userMessage) {
-        addMessage({ id: Date.now().toString() + '-u', role: 'user', text: data.userMessage });
-      }
+      const sequence = new AudioSequence({
+        onPlay: () => {
+          setIsPlaying(true);
+          setActivePlayingMessageId(tutorMsgId);
+          setProcessingPhase('speaking');
+          updateMessage(tutorMsgId, { phase: 'speaking' });
+        },
+        onEnd: () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          setActivePlayingMessageId(null);
+          updateMessage(tutorMsgId, { phase: undefined });
+        },
+      });
+      currentSequenceRef.current = sequence;
 
-      if (data.textResponse) {
-        const newMessageId = Date.now().toString() + '-t';
-        addMessage({ 
-          id: newMessageId, 
-          role: 'tutor', 
-          text: data.textResponse,
-          audioBase64: data.audioBase64 
-        });
+      const reader = chatRes.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = '';
+      let fullText = '';
+      let firstTokenSeen = false;
+      const accumulatedAudio: string[] = [];
+      let enqueueChain: Promise<void> = Promise.resolve();
 
-        if (data.audioBase64) {
-          playAudioBase64(data.audioBase64, newMessageId);
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const events = sseBuffer.split('\n\n');
+        sseBuffer = events.pop() || '';
+        for (const evt of events) {
+          const lines = evt.split('\n');
+          let eventName = 'message';
+          let dataStr = '';
+          for (const line of lines) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+          }
+          if (!dataStr) continue;
+          let payload: { delta?: string; text?: string; message?: string };
+          try { payload = JSON.parse(dataStr); } catch { continue; }
+
+          if (eventName === 'token' && typeof payload.delta === 'string') {
+            if (!firstTokenSeen) {
+              firstTokenSeen = true;
+              setProcessingPhase('streaming');
+              updateMessage(tutorMsgId, { phase: 'streaming' });
+            }
+            fullText += payload.delta;
+            updateMessage(tutorMsgId, { text: fullText });
+          } else if (eventName === 'sentence' && typeof payload.text === 'string') {
+            const sentence = payload.text;
+            const ttsPromise = fetchTtsAudios(sentence);
+            enqueueChain = enqueueChain.then(async () => {
+              const audios = await ttsPromise;
+              for (const b64 of audios) {
+                sequence.enqueue(b64);
+                accumulatedAudio.push(b64);
+              }
+              updateMessage(tutorMsgId, { audioChunks: [...accumulatedAudio] });
+            });
+          } else if (eventName === 'error') {
+            throw new Error(payload.message || 'Stream error');
+          }
         }
       }
-    } catch (error: any) {
-      console.error("Error processing audio:", error);
-      alert("Something went wrong talking to Acharya: " + (error?.message || "Unknown error"));
+
+      await enqueueChain;
+      // If audio is still pending or playing, the sequence's onPlay/onEnd will manage the phase
+      if (accumulatedAudio.length === 0) {
+        updateMessage(tutorMsgId, { phase: undefined });
+      }
+      await sequence.finalize();
+    } catch (error: unknown) {
+      console.error('Error processing audio:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      updateMessage(userMsgId, { phase: undefined });
+      updateMessage(tutorMsgId, { phase: undefined });
+      alert('Something went wrong talking to Acharya: ' + message);
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const playAudioBase64 = (base64: string, messageId: string | null = null) => {
-    try {
-      stopActiveAudio();
-      const audio = new Audio(`data:audio/wav;base64,${base64}`);
-      currentAudioRef.current = audio;
-      setIsPlaying(true);
-      setIsPaused(false);
-      setActivePlayingMessageId(messageId);
-
-      audio.onended = () => {
-        setIsPlaying(false);
-        setIsPaused(false);
-        setActivePlayingMessageId(null);
-      };
-
-      audio.play();
-    } catch (err) {
-      console.error("Error playing audio", err);
-      setIsPlaying(false);
-      setIsPaused(false);
-      setActivePlayingMessageId(null);
+      setProcessingPhase(null);
     }
   };
 
@@ -678,13 +817,20 @@ function LearnPageInner() {
 
       const data = await res.json();
       if (data.transcript) {
+        const incomingSegments: NotebookSegment[] | undefined = Array.isArray(data.segments) ? data.segments : undefined;
         setTranscript(data.transcript);
+        setSegments(incomingSegments);
         handleExtractTopics(data.transcript);
-        // Save or create notebook
         if (currentNotebookId) {
-          updateNotebook(currentNotebookId, { transcript: data.transcript, source: 'youtube', sourceUrl: youtubeUrl, wordCount: data.transcript.split(/\s+/).filter(Boolean).length });
+          updateNotebook(currentNotebookId, {
+            transcript: data.transcript,
+            segments: incomingSegments,
+            source: 'youtube',
+            sourceUrl: youtubeUrl,
+            wordCount: data.transcript.split(/\s+/).filter(Boolean).length,
+          });
         } else {
-          const nb = createNotebook(data.transcript, [], 'youtube', youtubeUrl);
+          const nb = createNotebook(data.transcript, [], 'youtube', youtubeUrl, incomingSegments);
           setCurrentNotebookId(nb.id);
           router.replace(`/learn?id=${nb.id}`, { scroll: false });
         }
@@ -861,15 +1007,45 @@ function LearnPageInner() {
           {topics.length > 0 && (
             <div>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-3">
-                What's in this video
+                What&apos;s in this video
               </span>
               <div className="space-y-1.5">
-                {topics.map((topic, i) => (
-                  <div key={i} className="text-xs p-3 bg-white border border-slate-200 rounded-md text-slate-800 font-medium shadow-sm flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#cfff00] border border-slate-800/20" />
-                    {topic}
-                  </div>
-                ))}
+                {topics.map((topic, i) => {
+                  const hasSummary = !!topic.summary;
+                  const expanded = expandedTopicIndex === i;
+                  return (
+                    <div
+                      key={i}
+                      className={`bg-white border rounded-md shadow-sm transition-all ${
+                        expanded ? 'border-slate-300' : 'border-slate-200'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => hasSummary && setExpandedTopicIndex(expanded ? null : i)}
+                        className={`w-full text-left text-xs p-3 text-slate-800 font-medium flex items-center gap-2 ${
+                          hasSummary ? 'cursor-pointer hover:bg-slate-50' : 'cursor-default'
+                        }`}
+                        aria-expanded={hasSummary ? expanded : undefined}
+                      >
+                        <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-[#cfff00] border border-slate-800/20" />
+                        <span className="flex-1 leading-snug">{topic.title}</span>
+                        {hasSummary && (
+                          <ChevronLeft
+                            className={`w-3 h-3 text-slate-400 shrink-0 transition-transform ${
+                              expanded ? '-rotate-90' : 'rotate-180'
+                            }`}
+                          />
+                        )}
+                      </button>
+                      {hasSummary && expanded && (
+                        <div className="px-3 pb-3 -mt-1 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">
+                          {topic.summary}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -965,7 +1141,7 @@ function LearnPageInner() {
                           : 'bg-white border-slate-200 text-slate-900 relative'
                       }`}>
                         {/* Role tag */}
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center justify-between mb-2 gap-2">
                           <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                             {msg.role === 'user' ? (
                               <>
@@ -977,13 +1153,39 @@ function LearnPageInner() {
                               </>
                             )}
                           </span>
+                          {msg.phase && msg.text && msg.phase !== 'streaming' && (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-60"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-slate-500"></span>
+                              </span>
+                              {phaseLabel(msg.phase)}
+                            </span>
+                          )}
                         </div>
 
-                        <p className={`text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-medium ${
-                          msg.role === 'user' ? 'text-slate-900' : 'text-slate-800'
-                        }`}>
-                          {msg.text}
-                        </p>
+                        {msg.phase && !msg.text ? (
+                          <div className="flex items-center gap-2 py-1">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500 shrink-0" />
+                            <span className="text-xs md:text-sm text-slate-500 font-medium">
+                              {phaseLabel(msg.phase)}…
+                            </span>
+                            <span className="flex gap-1 ml-1">
+                              <span className="w-1 h-1 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1 h-1 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: '200ms' }} />
+                              <span className="w-1 h-1 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: '400ms' }} />
+                            </span>
+                          </div>
+                        ) : (
+                          <p className={`text-xs md:text-sm leading-relaxed whitespace-pre-wrap font-medium ${
+                            msg.role === 'user' ? 'text-slate-900' : 'text-slate-800'
+                          }`}>
+                            {msg.text}
+                            {msg.phase === 'streaming' && (
+                              <span className="inline-block w-1.5 h-4 ml-0.5 bg-slate-400 animate-pulse align-middle" />
+                            )}
+                          </p>
+                        )}
 
                         {/* Playback controls */}
                         {msg.role === 'tutor' && (
@@ -1019,12 +1221,12 @@ function LearnPageInner() {
                                 </Button>
                               </>
                             ) : (
-                              msg.audioBase64 && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
+                              msg.audioChunks && msg.audioChunks.length > 0 && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
                                   className="h-8 border border-slate-200 hover:bg-slate-50 text-slate-800 text-[10px] font-bold rounded flex items-center"
-                                  onClick={() => playAudioBase64(msg.audioBase64!, msg.id)}
+                                  onClick={() => playAudioChunks(msg.audioChunks!, msg.id)}
                                 >
                                   <Volume2 className="w-3 h-3 mr-1.5" />
                                   Listen
@@ -1037,27 +1239,69 @@ function LearnPageInner() {
                     </div>
                   ))
                 )}
-                {isProcessing && (
-                  <div className="p-5 rounded-lg border border-slate-200 bg-white shadow-sm flex items-center gap-2.5 text-xs text-slate-500">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-800" /> 
-                    Thinking...
+                {lessonRag.error && (
+                  <div className="p-4 rounded-lg border border-red-200 bg-red-50 shadow-sm text-[11px] text-red-800">
+                    <span className="font-semibold">Indexing failed:</span> {lessonRag.error}
                   </div>
                 )}
               </div>
             </div>
 
             {/* FLOATING CONTROLLER PILL */}
-            <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto">
+            <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[420px]">
+              {(() => {
+                if (lessonRag.error && transcript && !lessonRag.ready) {
+                  return (
+                    <div className="bg-red-950 text-red-50 py-3 px-4 rounded-2xl shadow-lg border border-red-900 w-full">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                        <span className="text-xs font-bold">Indexing failed</span>
+                      </div>
+                      <div className="mt-1.5 text-[11px] text-red-200 break-words">
+                        {lessonRag.error}
+                      </div>
+                      <div className="mt-2 text-[10px] text-red-300">
+                        Open the browser console for details, then reload the lesson to retry.
+                      </div>
+                    </div>
+                  );
+                }
+                const indexing = indexingView();
+                if (indexing && !lessonRag.ready) {
+                  return (
+                    <div className="bg-slate-950 text-white py-3 px-4 rounded-2xl shadow-lg border border-slate-800 w-full">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#cfff00] shrink-0" />
+                        <span className="text-xs font-bold truncate">{indexing.headline}</span>
+                        {indexing.percent != null && (
+                          <span className="ml-auto text-[10px] text-slate-300 font-mono tabular-nums shrink-0">
+                            {indexing.percent.toFixed(0)}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full bg-[#cfff00] transition-all duration-200 ${indexing.percent == null ? 'animate-pulse w-1/3' : ''}`}
+                          style={indexing.percent != null ? { width: `${Math.min(100, indexing.percent)}%` } : undefined}
+                        />
+                      </div>
+                      <div className="mt-1.5 text-[10px] text-slate-400 truncate">
+                        {indexing.detail || 'Cached after this.'}
+                      </div>
+                    </div>
+                  );
+                }
+                return (
               <div className="bg-slate-950 text-white py-3 px-3 md:px-4 rounded-full shadow-lg flex items-center gap-2 md:gap-4 transition-all duration-300 w-full md:min-w-[340px] border border-slate-800">
                 <Button
                   size="icon"
                   className={`w-10 h-10 rounded-full transition-all duration-200 relative shrink-0 ${
-                    isRecording 
-                      ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    isRecording
+                      ? 'bg-red-500 hover:bg-red-600 text-white'
                       : 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950'
                   }`}
                   onClick={toggleRecording}
-                  disabled={isProcessing || isHandsFree}
+                  disabled={isProcessing || isHandsFree || (!!transcript && !lessonRag.ready)}
                 >
                   {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                 </Button>
@@ -1066,13 +1310,13 @@ function LearnPageInner() {
                 <Button
                   size="icon"
                   className={`w-10 h-10 rounded-full transition-all duration-200 relative shrink-0 ${
-                    isHandsFree 
-                      ? 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950' 
+                    isHandsFree
+                      ? 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
                   }`}
                   onClick={() => setIsHandsFree(!isHandsFree)}
                   title={isHandsFree ? "Disable Hands-Free" : "Enable Hands-Free"}
-                  disabled={isProcessing}
+                  disabled={isProcessing || (!!transcript && !lessonRag.ready)}
                 >
                   <Headphones className="w-4 h-4" />
                 </Button>
@@ -1116,13 +1360,20 @@ function LearnPageInner() {
                       </span>
                       <span>Recording...</span>
                     </div>
+                  ) : processingPhase ? (
+                    <div className="flex items-center gap-2 text-slate-200">
+                      <Loader2 className="w-3 h-3 animate-spin text-[#cfff00] shrink-0" />
+                      <span className="truncate">{phaseLabel(processingPhase)}…</span>
+                    </div>
                   ) : (
                     <span className="text-slate-300 truncate">
-                      {isProcessing ? "On it..." : <><span className="hidden sm:inline">Hold space or </span>Tap to talk</>}
+                      <span className="hidden sm:inline">Hold space or </span>Tap to talk
                     </span>
                   )}
                 </div>
               </div>
+                );
+              })()}
             </div>
           </div>
 

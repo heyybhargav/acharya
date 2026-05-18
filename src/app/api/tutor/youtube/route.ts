@@ -10,8 +10,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No YouTube URL provided' }, { status: 400 });
     }
 
-    // Fetch transcript from YouTube
-    const transcriptItems = await YoutubeTranscript.fetchTranscript(url);
+    // Fetch transcript from YouTube with lang fallback to avoid Vercel datacenter consent blocks
+    const transcriptItems = await YoutubeTranscript.fetchTranscript(url, { lang: 'en' });
 
     if (!transcriptItems || transcriptItems.length === 0) {
       return NextResponse.json({ error: 'No transcript found for this video' }, { status: 404 });

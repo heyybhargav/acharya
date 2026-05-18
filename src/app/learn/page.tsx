@@ -556,12 +556,25 @@ function LearnPageInner() {
 
     try {
       // Decode the uploaded file using Web Audio API to handle slicing
-      setTranscriptionProgress("Loading media track for analysis...");
+      setTranscriptionProgress("Decoding and optimizing audio track (16kHz Mono)...");
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const arrayBuffer = await file.arrayBuffer();
+      const rawAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       
-      setTranscriptionProgress("Decoding audio track data...");
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      // Downsample to 16kHz mono to drastically reduce WAV payload size and avoid Vercel 4.5MB limit
+      const TARGET_SAMPLE_RATE = 16000;
+      const offlineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
+        1, // mono
+        rawAudioBuffer.duration * TARGET_SAMPLE_RATE,
+        TARGET_SAMPLE_RATE
+      );
+      
+      const sourceNode = offlineCtx.createBufferSource();
+      sourceNode.buffer = rawAudioBuffer;
+      sourceNode.connect(offlineCtx.destination);
+      sourceNode.start();
+      
+      const audioBuffer = await offlineCtx.startRendering();
       
       const duration = audioBuffer.duration;
       const sampleRate = audioBuffer.sampleRate;
@@ -577,7 +590,7 @@ function LearnPageInner() {
         
         setTranscriptionProgress(`Transcribing block ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
         
-        // Create an AudioBuffer for this segment
+        // Create an AudioBuffer for this segment using the open audioCtx
         const chunkBuffer = audioCtx.createBuffer(
           audioBuffer.numberOfChannels,
           chunkLength,

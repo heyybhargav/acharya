@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { YoutubeTranscript } from 'youtube-transcript';
+import { YoutubeTranscript } from '@/lib/youtube-transcript';
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No YouTube URL provided' }, { status: 400 });
     }
 
-    // Fetch transcript from YouTube with lang fallback to avoid Vercel datacenter consent blocks
+    // Fetch transcript from YouTube
     const transcriptItems = await YoutubeTranscript.fetchTranscript(url, { lang: 'en' });
 
     if (!transcriptItems || transcriptItems.length === 0) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Format transcript with timestamps [MM:SS]
-    const formattedTranscript = transcriptItems.map((item) => {
+    const formattedTranscript = transcriptItems.map((item: any) => {
       const totalSeconds = Math.floor(item.offset / 1000);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;

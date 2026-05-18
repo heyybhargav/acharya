@@ -103,66 +103,7 @@ function splitTextIntoSafeChunks(text: string): string[] {
   return chunks;
 }
 
-function getRelevantContextChunks(transcript: string, query: string, topN: number = 3): string {
-  // 1. Split transcript into paragraph chunks (blocks of 3 sentences)
-  const sentences = transcript.match(/[^.!?।]+[.!?।]*\s*/g) || [transcript];
-  const chunks: string[] = [];
-  let currentChunk = "";
-  
-  for (let i = 0; i < sentences.length; i++) {
-    currentChunk += sentences[i];
-    if ((i + 1) % 3 === 0 || i === sentences.length - 1) {
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-      }
-      currentChunk = "";
-    }
-  }
-
-  if (chunks.length <= topN) {
-    return chunks.join("\n\n");
-  }
-
-  // 2. Tokenize user query to extract key terms (ignore basic stop words)
-  const stopwords = new Set(["what", "is", "the", "a", "an", "and", "or", "but", "in", "on", "at", "for", "with", "about", "to", "of", "from", "by", "this", "that", "these", "those", "क्या", "है", "का", "की", "के", "और", "में", "से", "पर", "को", "भी"]);
-  const queryTokens = query
-    .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"।]/g, "")
-    .split(/\s+/)
-    .filter(token => token.length > 1 && !stopwords.has(token));
-
-  if (queryTokens.length === 0) {
-    return chunks.slice(0, topN).join("\n\n");
-  }
-
-  // 3. Score each chunk by term-frequency overlap
-  const scoredChunks = chunks.map(chunk => {
-    const chunkLower = chunk.toLowerCase();
-    let score = 0;
-    
-    for (const token of queryTokens) {
-      const escapedToken = token.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const matches = chunkLower.match(new RegExp(escapedToken, 'g'));
-      if (matches) {
-        score += matches.length;
-      }
-    }
-    return { chunk, score };
-  });
-
-  // 4. Sort and reorder chronologically
-  scoredChunks.sort((a, b) => b.score - a.score);
-  const topScored = scoredChunks.slice(0, topN);
-  const orderedChunks = topScored
-    .map(sc => ({
-      chunk: sc.chunk,
-      index: chunks.indexOf(sc.chunk)
-    }))
-    .sort((a, b) => a.index - b.index)
-    .map(x => x.chunk);
-
-  return orderedChunks.join("\n\n");
-}
+// (Legacy chunking functions removed, using True RAG from @/lib/rag instead)
 
 export async function POST(req: NextRequest) {
   try {
@@ -206,35 +147,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not extract text from audio' }, { status: 400 });
     }
 
-    // Check if this is a global summarization / high-level insight question
-    const isGlobal = isGlobalQuery(userMessage);
-
-    // Retrieve either a truncated global transcript or targeted RAG chunks based on the query type
-    const relevantContext = isGlobal 
-      ? getGlobalContext(transcript) 
-      : getRelevantContextChunks(transcript, userMessage, 3);
-
-    // Step 2: Mastra Agent + Groq (RAG Context Injection)
-    const contextLabel = isGlobal 
-      ? `Context (Representative samples from across the full video transcript — beginning, middle, and end sections):`
-      : `Context (Most relevant sections from the video transcript):`;
+    // Step 2: PROPER RAG (Vector Embeddings via local Transformers.js)
+    // As per the assignment requirement, we do not stuff the full transcript.
+    // We use Xenova/all-MiniLM-L6-v2 to embed the transcript and do semantic cosine similarity search.
+    const isGlobal = userMessage.toLowerCase().includes('summary') || userMessage.toLowerCase().includes('what is this video about');
+    const topK = isGlobal ? 8 : 4; // Fetch more chunks for summaries
     
-    const prompt = `${contextLabel}
+    // We dynamically import `retrieveRelevantContext` here to avoid breaking the edge environment, 
+    // although Next.js API route handles standard node imports fine.
+    const { retrieveRelevantContext } = await import('@/lib/rag');
+    const relevantContext = await retrieveRelevantContext(userMessage, transcript, topK);
+
+    const systemPrompt = `You are Acharya, an expert AI learning companion.
+Below are the most relevant retrieved sections from the video transcript:
+
+--- RETRIEVED CONTEXT ---
 ${relevantContext}
+--- END CONTEXT ---
 
-User Question: ${userMessage}
-
-Remember your instructions:
-1. Use ONLY the context above. If it's not in the context, politely refuse.
-${isGlobal ? '2. Since this is a summary/insight question, draw insights from ALL sections of the context provided (beginning, mid-lecture, and later sections). Give a comprehensive answer that reflects the full arc of the video, not just the intro.' : '2. Answer specifically and directly from the relevant context above.'}
-3. IMPORTANT: You MUST respond in the EXACT same language and script that the user asked their question in (e.g. if they ask in Hindi, respond in Hindi Devanagari script; if they ask in Tamil, respond in Tamil script; if they ask in Telugu, respond in Telugu script, etc.). Keep the response direct, natural, and matching the user's spoken language.`;
+Your Core Instructions:
+1. Answer the user's questions primarily using the information from the retrieved context.
+2. CONVERSATIONAL AWARENESS: You are having a chat. If the user gives you a meta-instruction (e.g., "keep it short", "why did you miss that?", "explain simpler"), you MUST comply naturally and acknowledge their previous messages.
+3. If they ask a factual question about the video that is NOT covered in the context, politely let them know the video doesn't mention it. Do not hallucinate.
+4. IMPORTANT: Always respond in the EXACT SAME language and script that the user speaks in their latest message. Keep your tone helpful and engaging.`;
 
     const messagesArray = [
+      { role: 'system', content: systemPrompt },
       ...history.map((msg: any) => ({
         role: msg.role === 'tutor' ? 'assistant' : 'user',
         content: msg.text,
       })),
-      { role: 'user', content: prompt }
+      { role: 'user', content: userMessage }
     ];
 
     // Mastra agent generation with robust Sarvam AI fallback

@@ -62,22 +62,22 @@ export default function HomePage() {
             className="flex items-center gap-2 h-9 px-4 bg-slate-950 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-all shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            New notebook
+            New lesson
           </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-12">
+      <main className="max-w-5xl mx-auto px-6 py-8 md:py-12">
         {notebooks.length === 0 ? (
           /* Empty state */
-          <div className="flex flex-col items-center justify-center text-center py-24 space-y-8">
+          <div className="flex flex-col items-center justify-center text-center py-10 md:py-24 space-y-6 md:space-y-8">
             <div className="w-20 h-20 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center shadow-sm">
               <BookOpen className="w-9 h-9 text-slate-400" />
             </div>
             <div className="space-y-2 max-w-sm">
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Your notebooks live here</h2>
+              <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Your lessons live here</h2>
               <p className="text-slate-500 text-sm leading-relaxed">
-                Each notebook is a video or lecture Acharya has learned from. You can ask questions, take quizzes, and revisit any time.
+                Each lesson is a video or lecture Acharya has learned from. You can ask questions, take quizzes, and revisit any time.
               </p>
             </div>
 
@@ -108,21 +108,21 @@ export default function HomePage() {
         ) : (
           <>
             <div className="mb-8">
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Your notebooks</h1>
-              <p className="text-slate-500 text-sm mt-1">{notebooks.length} {notebooks.length === 1 ? 'notebook' : 'notebooks'} · pick up where you left off</p>
+              <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Your lessons</h1>
+              <p className="text-slate-500 text-sm mt-1">{notebooks.length} {notebooks.length === 1 ? 'lesson' : 'lessons'} · pick up where you left off</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* New notebook card */}
+              {/* New lesson card */}
               <button
                 onClick={handleNewNotebook}
                 className="group flex flex-col items-center justify-center gap-3 p-8 h-48 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-2xl transition-all text-slate-400 hover:text-slate-600"
               >
                 <Plus className="w-7 h-7" />
-                <span className="text-sm font-semibold">New notebook</span>
+                <span className="text-sm font-semibold">New lesson</span>
               </button>
 
-              {/* Notebook cards */}
+              {/* Lesson cards */}
               {notebooks.map((nb) => (
                 <div
                   key={nb.id}

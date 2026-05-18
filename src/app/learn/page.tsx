@@ -36,7 +36,7 @@ function LearnPageInner() {
   } = useAppStore();
 
   const [currentNotebookId, setCurrentNotebookId] = useState<string | null>(notebookId);
-  const [notebookTitle, setNotebookTitle] = useState<string>('New notebook');
+  const [notebookTitle, setNotebookTitle] = useState<string>('New lesson');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -884,7 +884,7 @@ function LearnPageInner() {
               className="hidden md:flex items-center gap-1.5 text-slate-400 hover:text-slate-700 transition-colors text-xs font-medium"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span>All notebooks</span>
+              <span>All lessons</span>
             </button>
             <div className="hidden md:block w-px h-4 bg-slate-200" />
             <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
@@ -934,6 +934,12 @@ function LearnPageInner() {
                       <p className="text-sm md:text-base text-slate-500 max-w-md mx-auto leading-relaxed">
                         Paste a YouTube link or upload a lecture. Then just ask — Acharya has watched it for you.
                       </p>
+                      <Button 
+                        className="md:hidden mt-6 h-10 px-6 bg-[#cfff00] hover:bg-[#bce600] text-slate-950 font-bold text-sm rounded-xl shadow-sm border border-slate-300/20"
+                        onClick={() => setIsMobileSidebarOpen(true)}
+                      >
+                        Add a video
+                      </Button>
                     </div>
                   </div>
                 ) : (

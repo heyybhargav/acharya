@@ -11,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { 
   Mic, Square, BrainCircuit, FileText, Upload, 
-  Volume2, User, Loader2, Video, BookOpen, Headphones, Trophy, ArrowRight, X, Play, Pause, ChevronLeft
+  Volume2, User, Loader2, Video, BookOpen, Headphones, Trophy, ArrowRight, X, Play, Pause, ChevronLeft, Menu
 } from 'lucide-react';
 
 export default function LearnPage() {
@@ -37,6 +37,7 @@ function LearnPageInner() {
 
   const [currentNotebookId, setCurrentNotebookId] = useState<string | null>(notebookId);
   const [notebookTitle, setNotebookTitle] = useState<string>('New notebook');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -730,13 +731,32 @@ function LearnPageInner() {
   return (
     <div className="flex h-screen bg-white text-slate-900 overflow-hidden font-sans antialiased">
       
-      {/* LEFT SIDEBAR - Clean, Flat, High-contrast */}
-      <aside className="w-80 bg-slate-50 border-r border-slate-200 flex flex-col z-30 shrink-0">
+      {/* Mobile Sidebar Backdrop */}
+      {isMobileSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* LEFT SIDEBAR - drawer on mobile, fixed on desktop */}
+      <aside className={`
+        fixed md:relative inset-y-0 left-0 z-50 md:z-30
+        w-80 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0
+        transition-transform duration-300 ease-in-out
+        ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
         <div className="p-6 border-b border-slate-200">
-          <div className="flex items-center gap-2 mb-6">
-            <span className="text-xl font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+          <div className="flex items-center justify-between mb-6">
+            <span className="text-xl font-black tracking-tight text-slate-900">
               acharya
             </span>
+            <button
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="md:hidden p-1 text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="space-y-4">
@@ -850,32 +870,48 @@ function LearnPageInner() {
       }}>
         
         {/* Header - Minimalist */}
-        <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center px-6 justify-between shrink-0 z-10">
-          <div className="flex items-center gap-3">
+        <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center px-4 md:px-6 justify-between shrink-0 z-10">
+          <div className="flex items-center gap-2 md:gap-3">
+            {/* Mobile: hamburger to open source sidebar */}
+            <button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="md:hidden p-2 -ml-1 text-slate-400 hover:text-slate-700"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <button
               onClick={() => router.push('/')}
-              className="flex items-center gap-1.5 text-slate-400 hover:text-slate-700 transition-colors text-xs font-medium"
+              className="hidden md:flex items-center gap-1.5 text-slate-400 hover:text-slate-700 transition-colors text-xs font-medium"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">All notebooks</span>
+              <span>All notebooks</span>
             </button>
-            <div className="w-px h-4 bg-slate-200" />
+            <div className="hidden md:block w-px h-4 bg-slate-200" />
             <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              {notebookTitle}
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="line-clamp-1 max-w-[140px] md:max-w-none">{notebookTitle}</span>
+              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Grounded in your video
               </span>
             </h2>
           </div>
-          <Button 
-            variant="outline" 
-            onClick={handleGenerateQuiz}
-            disabled={!transcript || isGeneratingQuiz}
-            className="h-9 border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-semibold shadow-sm"
-          >
-            {isGeneratingQuiz ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <BrainCircuit className="w-3.5 h-3.5 mr-2" />}
-            Quiz me
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Mobile back button */}
+            <button
+              onClick={() => router.push('/')}
+              className="md:hidden p-2 text-slate-400 hover:text-slate-700"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <Button 
+              variant="outline" 
+              onClick={handleGenerateQuiz}
+              disabled={!transcript || isGeneratingQuiz}
+              className="h-9 border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-semibold shadow-sm"
+            >
+              {isGeneratingQuiz ? <Loader2 className="w-3.5 h-3.5 mr-0 md:mr-2 animate-spin" /> : <BrainCircuit className="w-3.5 h-3.5 mr-0 md:mr-2" />}
+              <span className="hidden md:inline">Quiz me</span>
+            </Button>
+          </div>
         </header>
 
         {/* Scroll Thread */}
@@ -991,9 +1027,9 @@ function LearnPageInner() {
               </div>
             </div>
 
-            {/* FLOATING CONTROLLER PILL - Pure Ramp Design (Flat, Black & Chartreuse/Lime) */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
-              <div className="bg-slate-950 text-white py-3 px-4 rounded-full shadow-lg flex items-center gap-4 transition-all duration-300 min-w-[340px] border border-slate-800">
+            {/* FLOATING CONTROLLER PILL */}
+            <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto">
+              <div className="bg-slate-950 text-white py-3 px-3 md:px-4 rounded-full shadow-lg flex items-center gap-2 md:gap-4 transition-all duration-300 w-full md:min-w-[340px] border border-slate-800">
                 <Button
                   size="icon"
                   className={`w-10 h-10 rounded-full transition-all duration-200 relative shrink-0 ${
@@ -1044,26 +1080,26 @@ function LearnPageInner() {
                   </>
                 )}
 
-                <div className="text-xs font-semibold text-left select-none pr-4">
+                <div className="text-xs font-semibold text-left select-none pr-2 md:pr-4 flex-1 min-w-0">
                   {isHandsFree ? (
                     <div className="flex flex-col">
                       <span className="text-[#cfff00] font-extrabold flex items-center gap-1.5 animate-pulse">
                         <span className="h-1.5 w-1.5 rounded-full bg-[#cfff00]"></span>
                         Listening...
                       </span>
-                      <span className="text-slate-400 text-[10px] font-normal leading-tight">Just talk — Acharya will hear you</span>
+                      <span className="text-slate-400 text-[10px] font-normal leading-tight hidden sm:block">Just talk — Acharya will hear you</span>
                     </div>
                   ) : isRecording ? (
                     <div className="flex items-center gap-2 text-red-400">
-                      <span className="relative flex h-2 w-2">
+                      <span className="relative flex h-2 w-2 shrink-0">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                       </span>
                       <span>Recording...</span>
                     </div>
                   ) : (
-                    <span className="text-slate-300">
-                      {isProcessing ? "On it..." : "Hold space or click to talk"}
+                    <span className="text-slate-300 truncate">
+                      {isProcessing ? "On it..." : <><span className="hidden sm:inline">Hold space or </span>Tap to talk</>}
                     </span>
                   )}
                 </div>
@@ -1071,9 +1107,9 @@ function LearnPageInner() {
             </div>
           </div>
 
-          {/* RIGHT SIDEBAR (Quiz) - Flat White Card Aesthetics */}
+          {/* RIGHT SIDEBAR (Quiz) - Full screen overlay on mobile, sidebar on desktop */}
           {quizActive && (
-            <aside className="w-96 bg-white border-l border-slate-200 flex flex-col z-20 transition-all shrink-0">
+            <aside className="fixed inset-0 z-50 md:relative md:inset-auto md:z-20 w-full md:w-96 bg-white border-l border-slate-200 flex flex-col transition-all shrink-0">
               <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
                 <h3 className="font-bold text-slate-900 flex items-center gap-2 text-xs uppercase tracking-widest text-slate-500">
                   <BrainCircuit className="w-3.5 h-3.5 text-slate-800" />

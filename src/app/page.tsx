@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Notebook, getNotebooks, deleteNotebook, formatRelativeDate, createNotebook } from '@/lib/notebooks';
+import { Notebook, getNotebooks, deleteNotebook, formatRelativeDate } from '@/lib/notebooks';
 import { useAppStore } from '@/lib/store';
 import { BookOpen, Plus, Trash2, Video, FileText, Clock, ChevronRight, Mic } from 'lucide-react';
 

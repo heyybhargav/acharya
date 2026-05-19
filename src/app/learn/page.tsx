@@ -31,7 +31,7 @@ function LearnPageInner() {
   const {
     transcript, setTranscript,
     topics, setTopics,
-    messages, addMessage, updateMessage, clearMessages,
+    messages, addMessage, updateMessage,
     quizActive, setQuizActive,
     quizData, setQuizData
   } = useAppStore();
@@ -60,7 +60,6 @@ function LearnPageInner() {
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [quizScore, setQuizScore] = useState(0);
-  const [hasSubmittedQuizAnswer, setHasSubmittedQuizAnswer] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionProgress, setTranscriptionProgress] = useState('');
   const [processingPhase, setProcessingPhase] = useState<'transcribing' | 'searching' | 'thinking' | 'streaming' | 'speaking' | null>(null);
@@ -255,14 +254,6 @@ function LearnPageInner() {
     }
   };
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  };
-
   const startRecordingFromHandsFree = (stream: MediaStream) => {
     // Hard guards: never start a VAD recording if hands-free has been turned off,
     // or if any other recording / processing is in flight.
@@ -335,6 +326,7 @@ function LearnPageInner() {
     let analyser: AnalyserNode | null = null;
     let silenceStart: number | null = null;
     let speakingStart: number | null = null;
+    let lastSpeechAt: number | null = null; // grace window so micro-gaps don't kill accumulation
     let localStream: MediaStream | null = null;
 
     if (!isHandsFree) {
@@ -389,32 +381,44 @@ function LearnPageInner() {
           const threshold = isPlayingRef.current ? 26 : 14;
           const isSpeechDetected = average > threshold;
 
+          const now = Date.now();
           if (isSpeechDetected) {
-            silenceStart = null; // Reset silence timer
-            
+            silenceStart = null;
+            lastSpeechAt = now;
+
             // 1. Interrupt TTS instantly if user starts speaking
             if (isPlayingRef.current && currentSequenceRef.current) {
               stopActiveAudio();
             }
 
-            // 2. Start recording if we are currently idle
+            // 2. Start recording if we are currently idle. Accumulate 180ms
+            //    of continuous speech to filter out clicks and pops.
             if (!isRecordingRef.current && !isProcessingRef.current) {
               if (!speakingStart) {
-                speakingStart = Date.now();
-              } else if (Date.now() - speakingStart > 180) { // Require continuous speech for 180ms to block sudden clicks/background pops
+                speakingStart = now;
+              } else if (now - speakingStart > 180) {
                 startRecordingFromHandsFree(stream);
               }
             }
           } else {
-            speakingStart = null;
-            
-            // 3. Silence Detection: Stop recording if we hear silence for > 1.6 seconds
+            // Don't blank speakingStart on every silent frame. Allow up to
+            // 250ms of micro-gap between syllables so quiet breathing or
+            // brief pauses don't kill the accumulation window.
+            if (speakingStart && lastSpeechAt && now - lastSpeechAt > 250) {
+              speakingStart = null;
+            }
+
+            // 3. Silence detection: stop recording after 2.5s of silence.
+            //    Bumped from 1.6s because natural thinking pauses
+            //    ("hmm... so... why does...") were truncating recordings.
             if (isRecordingRef.current) {
               if (!silenceStart) {
-                silenceStart = Date.now();
-              } else if (Date.now() - silenceStart > 1600) {
+                silenceStart = now;
+              } else if (now - silenceStart > 2500) {
                 stopRecording();
                 silenceStart = null;
+                speakingStart = null;
+                lastSpeechAt = null;
               }
             }
           }
@@ -898,7 +902,6 @@ function LearnPageInner() {
     setSelectedQuizOption(null);
     setCurrentQuizIndex(0);
     setQuizScore(0);
-    setHasSubmittedQuizAnswer(false);
     setQuizData(null);
     try {
       const res = await fetch('/api/tutor/quiz', {
@@ -920,7 +923,6 @@ function LearnPageInner() {
 
   const handleNextQuizQuestion = () => {
     setSelectedQuizOption(null);
-    setHasSubmittedQuizAnswer(false);
     setCurrentQuizIndex((prev) => prev + 1);
   };
 
@@ -931,7 +933,6 @@ function LearnPageInner() {
     if (index === currentQuestion?.correctOptionIndex) {
       setQuizScore((prev) => prev + 1);
     }
-    setHasSubmittedQuizAnswer(true);
   };
 
   return (

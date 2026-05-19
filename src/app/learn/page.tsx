@@ -372,12 +372,10 @@ function LearnPageInner() {
           // Bail out immediately and stop scheduling further frames.
           if (!isHandsFreeRef.current) return;
 
-          // If Acharya is currently speaking/playing audio, ignore microphone VAD triggers
-          // to prevent laptop speaker spillover/acoustic feedback from self-interrupting the playback!
-          if (isPlayingRef.current) {
-            animationFrameId = requestAnimationFrame(checkAudio);
-            return;
-          }
+          // Note: we intentionally do NOT bail when Acharya is speaking. The
+          // user's voice has to be able to interrupt playback (see the
+          // isSpeechDetected branch below). We bump the detection threshold
+          // higher during playback to filter out speaker spillover instead.
 
           analyser.getByteFrequencyData(dataArray);
 

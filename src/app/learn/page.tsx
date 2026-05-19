@@ -43,6 +43,13 @@ function LearnPageInner() {
 
   const lessonRag = useLessonRag(currentNotebookId, transcript, segments);
 
+  // Track the latest notebook id in a ref so async callbacks (extract-topics, etc.)
+  // see the freshly created id without waiting for closure refresh.
+  const currentNotebookIdRef = useRef<string | null>(currentNotebookId);
+  useEffect(() => {
+    currentNotebookIdRef.current = currentNotebookId;
+  }, [currentNotebookId]);
+
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -655,7 +662,19 @@ function LearnPageInner() {
         body: JSON.stringify({ transcript: activeTranscript }),
       });
       const data = await res.json();
-      if (data.topics) setTopics(data.topics);
+      if (data.topics) {
+        setTopics(data.topics);
+        // Persist topics + summaries immediately. The auto-save effect is
+        // debounced 1500ms and the user could refresh before it fires,
+        // losing the freshly-fetched summaries.
+        const nbId = currentNotebookIdRef.current;
+        if (nbId) {
+          updateNotebook(nbId, {
+            topics: data.topics,
+            title: data.topics[0]?.title || notebookTitle,
+          });
+        }
+      }
     } catch (e) {
       console.error(e);
     } finally {

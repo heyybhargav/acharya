@@ -1,12 +1,11 @@
-// Multi-client InnerTube YouTube transcript fetcher.
+// Multi-client InnerTube YouTube transcript fetcher with a Supadata fallback.
 //
-// YouTube increasingly throttles its public caption endpoints when the request
-// comes from a datacenter IP (Vercel, AWS, GCP). A single client identity
-// (e.g. ANDROID) is unreliable from serverless. We try several clients in
-// sequence and accept the first one that returns caption tracks.
-//
-// This is not a guarantee. If all clients are throttled for a given video the
-// user can paste the transcript manually.
+// YouTube increasingly blocks its public caption endpoints from datacenter
+// IPs (Vercel, AWS, GCP). We try several InnerTube client identities and a
+// web-page scrape from our own egress. When all of those fail (typical on
+// production Vercel), we fall back to Supadata's transcript API, which sits
+// behind residential infrastructure and is reliable. Free tier: 100 req/mo,
+// no credit card required. Set SUPADATA_API_KEY in env to enable.
 
 export interface TranscriptItem {
   text: string;
@@ -225,11 +224,49 @@ function pickTrack(tracks: RawCaptionTrack[], preferredLang: string): RawCaption
   );
 }
 
+interface SupadataSegment {
+  text: string;
+  offset: number;
+  duration: number;
+  lang?: string;
+}
+
+async function fetchViaSupadata(originalUrl: string, videoId: string): Promise<TranscriptItem[] | null> {
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) return null;
+  const ytUrl = originalUrl.length === 11 ? `https://www.youtube.com/watch?v=${videoId}` : originalUrl;
+  const endpoint = `https://api.supadata.ai/v1/transcript?url=${encodeURIComponent(ytUrl)}&text=false`;
+  try {
+    const res = await fetch(endpoint, {
+      headers: { 'x-api-key': apiKey, 'Accept': 'application/json' },
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn(`Supadata returned ${res.status}: ${errText.slice(0, 200)}`);
+      return null;
+    }
+    const data = await res.json();
+    const content: SupadataSegment[] = Array.isArray(data?.content) ? data.content : [];
+    if (content.length === 0) return null;
+    return content
+      .filter(c => typeof c.text === 'string' && c.text.trim().length > 0)
+      .map(c => ({
+        text: c.text.trim(),
+        offsetMs: Math.round(c.offset),
+        durationMs: Math.round(c.duration),
+        lang: c.lang,
+      }));
+  } catch (err) {
+    console.warn('Supadata fetch threw:', err);
+    return null;
+  }
+}
+
 export async function fetchTranscript(urlOrId: string, preferredLang = 'en'): Promise<TranscriptItem[]> {
   const videoId = extractVideoId(urlOrId);
   const errors: string[] = [];
 
-  // First pass: try each InnerTube client.
+  // First pass: try each InnerTube client from our own egress.
   for (const client of CLIENTS) {
     const tracks = await tryInnerTubeClient(videoId, client);
     if (!tracks) {
@@ -247,8 +284,6 @@ export async function fetchTranscript(urlOrId: string, preferredLang = 'en'): Pr
   }
 
   // Second pass: scrape the watch page HTML for the player response.
-  // Sometimes works when the InnerTube API is throttled, because the watch
-  // page hits a different YouTube backend.
   const scrapeTracks = await tryWebPageScrape(videoId);
   if (scrapeTracks) {
     const track = pickTrack(scrapeTracks, preferredLang);
@@ -267,8 +302,15 @@ export async function fetchTranscript(urlOrId: string, preferredLang = 'en'): Pr
     errors.push('WEB_SCRAPE: page returned no player response');
   }
 
+  // Final fallback: Supadata if configured. They run residential infra and
+  // succeed where direct datacenter calls fail.
+  const supadataItems = await fetchViaSupadata(urlOrId, videoId);
+  if (supadataItems && supadataItems.length > 0) return supadataItems;
+  if (process.env.SUPADATA_API_KEY) errors.push('SUPADATA: returned empty');
+  else errors.push('SUPADATA: not configured');
+
   throw new Error(
-    `Could not fetch a transcript for this video from the server (${errors.join('; ')}). ` +
-    `YouTube may be blocking our deployment IP. Paste the transcript manually, or upload the video file.`,
+    `Could not fetch a transcript for this video. ${errors.join('; ')}. ` +
+    `Paste the transcript manually, or upload the video file.`,
   );
 }

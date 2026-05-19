@@ -64,6 +64,7 @@ function LearnPageInner() {
   const handsFreeStreamRef = useRef<MediaStream | null>(null);
   const isHandsFreeRef = useRef(isHandsFree);
   const isRecordingFromHandsFreeRef = useRef(false);
+  const discardNextRecordingRef = useRef(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -256,6 +257,9 @@ function LearnPageInner() {
   };
 
   const startRecordingFromHandsFree = (stream: MediaStream) => {
+    // Hard guards: never start a VAD recording if hands-free has been turned off,
+    // or if any other recording / processing is in flight.
+    if (!isHandsFreeRef.current) return;
     if (!transcript) return;
     if (isRecording || isProcessing) return;
 
@@ -274,9 +278,17 @@ function LearnPageInner() {
       };
 
       mediaRecorder.onstop = async () => {
-        // Discard recording if hands-free mode was disabled during recording session
+        // Cleanup-initiated abort (hands-free was just toggled off).
+        if (discardNextRecordingRef.current) {
+          discardNextRecordingRef.current = false;
+          isRecordingFromHandsFreeRef.current = false;
+          setIsRecording(false);
+          return;
+        }
+        // Discard if hands-free mode was disabled during recording.
         if (isRecordingFromHandsFreeRef.current && !isHandsFreeRef.current) {
           isRecordingFromHandsFreeRef.current = false;
+          setIsRecording(false);
           return;
         }
         isRecordingFromHandsFreeRef.current = false;
@@ -349,6 +361,9 @@ function LearnPageInner() {
 
         const checkAudio = () => {
           if (!analyser) return;
+          // Defensive: hands-free may have been toggled off between frames.
+          // Bail out immediately and stop scheduling further frames.
+          if (!isHandsFreeRef.current) return;
 
           // If Acharya is currently speaking/playing audio, ignore microphone VAD triggers
           // to prevent laptop speaker spillover/acoustic feedback from self-interrupting the playback!
@@ -415,6 +430,18 @@ function LearnPageInner() {
       cancelAnimationFrame(animationFrameId);
       if (source) source.disconnect();
       if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+      // If a VAD-triggered recording is in flight, stop it and discard its audio.
+      // Without this, the recorder can dribble on after the stream's tracks stop
+      // and eventually fire onstop with stale state, kicking off transcription.
+      if (
+        mediaRecorderRef.current &&
+        mediaRecorderRef.current.state === 'recording' &&
+        isRecordingFromHandsFreeRef.current
+      ) {
+        discardNextRecordingRef.current = true;
+        try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+        setIsRecording(false);
+      }
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
@@ -1341,7 +1368,11 @@ function LearnPageInner() {
                   : 'text-slate-300';
                 const showLiveDot = buttonState === 'recording' || (isHandsFree && buttonState === 'idle');
                 return (
-                  <div className="bg-slate-950 text-white py-2 pl-2 pr-3 md:py-2.5 md:pl-2.5 md:pr-4 rounded-full shadow-lg flex items-center gap-2.5 md:gap-3 border border-slate-800 w-full">
+                  <div className={`bg-slate-950 text-white py-2 pl-2 pr-2 md:py-2.5 md:pl-2.5 md:pr-3 rounded-full shadow-lg flex items-center gap-2.5 md:gap-3 border transition-all w-full ${
+                    isHandsFree
+                      ? 'border-[#cfff00]/60 shadow-[0_0_0_2px_rgba(207,255,0,0.15)]'
+                      : 'border-slate-800'
+                  }`}>
                     <Button
                       size="icon"
                       onClick={primaryOnClick}
@@ -1374,16 +1405,17 @@ function LearnPageInner() {
                       type="button"
                       onClick={() => setIsHandsFree(!isHandsFree)}
                       disabled={isProcessing || lessonNotReady}
-                      title={isHandsFree ? 'Turn off hands-free mode' : 'Turn on hands-free mode (auto-listen)'}
+                      title={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free (Acharya hears you without tapping)'}
                       aria-label={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
                       aria-pressed={isHandsFree}
-                      className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                      className={`h-8 md:h-9 pl-2 pr-2.5 md:pl-2.5 md:pr-3 rounded-full flex items-center gap-1.5 shrink-0 cursor-pointer transition text-[10px] md:text-[11px] font-bold tracking-wide disabled:opacity-40 disabled:cursor-not-allowed ${
                         isHandsFree
                           ? 'bg-[#cfff00] text-slate-950 hover:bg-[#bce600]'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                          : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-slate-100'
                       }`}
                     >
                       <Headphones className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                      <span>Hands-free</span>
                     </button>
                   </div>
                 );

@@ -1,10 +1,188 @@
-# Acharya AI — Development Chronicles & Decisions Log
+# Acharya AI: Development Chronicles & Decisions Log
 
-Welcome to the official development history, architectural log, and technical decision journal for **Acharya AI** — a premium, multilingual, RAG-bound video and voice academic tutor. 
+Welcome to the development history, architectural log, and technical decision journal for **Acharya AI**, a multilingual, RAG-bound video and voice academic tutor.
 
-This document serves as the persistent source of truth and development history for the project. It is updated chronologically as new capabilities are engineered.
+This document is in two parts:
+
+- **Phase 2 (current production)**: the production rewrite of the RAG and voice pipelines. This is what is deployed today.
+- **Phase 1 (original prototype)**: the original feature log, preserved verbatim for history. Several pieces of Phase 1 (the `/api/tutor/voice` route, the keyword-overlap chunk selector, `isGlobalQuery`, browser-side Transformers.js embeddings, etc.) have been replaced. Read the Phase 2 section first; the Phase 1 section is kept as a reference for the original design intent.
 
 ---
+
+## Phase 2: Production rewrite (May 2026)
+
+The first version of the app shipped with a "Proper RAG" claim that did not survive a careful audit. Phase 2 is the rewrite that addresses each finding from that audit, plus several latency optimisations and a multilingual-by-design overhaul.
+
+### What was broken in Phase 1
+
+- **Per-turn re-embedding.** Every voice question re-embedded the entire transcript via browser-side Transformers.js. A 1-hour lecture produced hundreds of chunks; each turn took 3 to 10 seconds of pure CPU.
+- **English-only embedding model.** `Xenova/all-MiniLM-L6-v2` was advertising multilingual support that didn't exist; Indian-language queries scored near-random.
+- **Browser bundle ballooning on first load.** Transformers.js loaded a 120 MB quantised model in the browser before any voice query could be answered. On Vercel, the server route that also imported the package hit serverless function size limits.
+- **Declared overlap, never applied.** The chunker took a 50-char overlap parameter and never used it. Mid-sentence facts split across chunks were lost.
+- **No reranking, no grounding signal.** Pure cosine top-K. Rare proper nouns and number-heavy queries failed silently. The LLM had no signal to refuse to answer when nothing relevant was retrieved.
+- **Generic "Thinking..." block.** Users waited 6 to 15 seconds with one unchanging spinner.
+- **No evals.** No way to measure retrieval quality across iterations.
+
+### What we changed
+
+**Embeddings: browser Transformers.js to Jina v3 server proxy.**
+
+- Replaced `Xenova/all-MiniLM-L6-v2` (384 dim, English-only) with Jina embeddings v3 (1024 dim, 89 languages including all 9 Indian languages in scope).
+- Embeddings now run through a thin `/api/tutor/embed` proxy that holds the Jina API key. The client never sees the key.
+- Asymmetric retrieval enabled via Jina's `task` parameter (`retrieval.passage` for chunks, `retrieval.query` for queries).
+- First-time browser load no longer downloads a 120 MB model.
+
+**Storage: per-request to persistent IndexedDB.**
+
+- Vectors persist in IndexedDB keyed by lesson id, stored as a packed `Float32Array` (4 bytes per dim).
+- Retrieval is now O(top-k) with zero network hops between query and chunks.
+- Stale-cache invalidation: saved index is discarded if the embedding model or dim changes.
+- React hook (`use-lesson-rag.ts`) tracks per-job state (`cancelled`, `completed`) so React strict mode's mount/cleanup/mount cycle doesn't strand the first ingest in a "stuck" state.
+
+**Retrieval: pure cosine to hybrid with grounding.**
+
+- New `src/lib/rag/` module suite: `chunker.ts`, `embedder.ts`, `bm25.ts`, `retrieve.ts`, `ingest.ts`, `store.ts`, `use-lesson-rag.ts`, plus shared `types.ts`.
+- Hybrid retrieval: cosine top-20 + BM25 top-20 fused via Reciprocal Rank Fusion (k=60).
+- BM25 implementation is multilingual-aware (Unicode `\p{L}\p{N}` tokenizer).
+- Grounding confidence flag (`high` / `medium` / `low`) computed from the top cosine score. Low confidence pins the LLM to "the lesson doesn't cover this" rather than letting it hallucinate.
+- Chunking actually applies its overlap parameter now (real 150-char overlap, sentence-aware), and the segment-aware path attaches `startMs` and `endMs` to every chunk for timestamp citation.
+
+**Voice loop: blocking request-response to streaming with per-sentence TTS.**
+
+- Old `/api/tutor/voice` (one monolithic route) replaced with three focused routes: `/api/tutor/stt`, `/api/tutor/chat`, `/api/tutor/tts`.
+- `/api/tutor/chat` returns a Server-Sent Events stream emitting both `token` events and `sentence` events. Sentence events fire as soon as a sentence terminator (or, for the very first sentence, a phrase break at ~25 chars) is crossed.
+- Client fires Sarvam TTS per sentence in parallel as sentences arrive. Custom `AudioSequence` plays them back-to-back with no gaps.
+- Time-to-first-audio: ~6 to 15 s in Phase 1, ~1.5 s in Phase 2.
+
+**Multilingual: regex-only guessing to Sarvam-driven language flow.**
+
+- Sarvam STT's `language_code` is now extracted, propagated to `/chat` (system prompt pinned to that language), and passed to `/tts` as the authoritative `target_language_code`.
+- Sarvam `text-lid` is the second-layer fallback (only fires when STT's signal is missing).
+- Unicode script regex demoted from primary detection to last-resort fallback.
+
+**YouTube transcript: single-client InnerTube to multi-client with Supadata fallback.**
+
+- `src/lib/yt-transcript.ts` tries 5 InnerTube clients in sequence (ANDROID, IOS, TVHTML5_SIMPLY_EMBEDDED_PLAYER, WEB, ANDROID_VR), then falls back to web-page scraping, then to Supadata's transcript API.
+- Edge runtime for the YouTube route specifically (different egress IP pool helps when YT throttles).
+- Supadata kicks in when Vercel's datacenter IPs are blocked, which is the typical production failure mode.
+
+**UX: phase-aware progress indicators replace generic spinner.**
+
+- Each phase has its own label in the floating pill and inline in the chat: "Transcribing your voice", "Searching the lesson", "Thinking through your question", "Writing" (streaming), "Speaking".
+- User-message bubble appears immediately on mic release with a shimmer so the user gets confirmation within ~50 ms.
+- Tutor message shows a blinking caret while streaming.
+- Indexing pill replaces the mic controls during first-time setup so users don't tap a useless button.
+
+**Hands-free mode (VAD): hardened and re-enabled barge-in.**
+
+- VAD logic accumulates speech with a 250 ms grace window so micro-gaps between syllables don't kill the trigger.
+- Silence-to-stop bumped from 1.6 s to 2.5 s so natural thinking pauses don't truncate recordings.
+- Voice interruption during playback restored (the early-return that suppressed all VAD during playback was removed; adaptive threshold of 26 during playback handles speaker spillover).
+- Three layers of guards prevent the "stale recording fires transcription after hands-free is turned off" bug.
+
+**Topic summaries (new).**
+
+- Per-topic summaries (80 to 130 words each, click to expand in the sidebar) generated from a stratified begin/middle/end sample of the transcript (8000 char budget), not the first 5000 chars.
+- Eager persistence so the user can refresh immediately after extraction without losing summaries.
+- Backwards-compatible with the legacy `topics: string[]` format.
+
+**Quiz (kept and tightened).**
+
+- Existing 3-MCQ flow preserved; prompt rules made explicit (conceptual, no trivia, plausible distractors, no markdown).
+
+**Cleanup.**
+
+- Removed: `/api/tutor/voice`, `src/lib/rag.ts`, `src/lib/youtube-transcript.ts` (custom impl), 20 scratch debug files (`test-yt*.js`, `test-sarvam*.js`, `test-transformers.js`), unused dependencies (`@xenova/transformers`, `@huggingface/transformers`, `ai`, `youtube-transcript`, `youtube-transcript-api`).
+- Added: `evals/golden.json` and `evals/run.ts` for retrieval quality tracking.
+
+### Updated configuration
+
+- **LLM (primary):** `llama-3.3-70b-versatile` via Groq, streaming SSE
+- **LLM (fallback):** `sarvam-m` via Sarvam (`/v1/chat/completions`)
+- **STT:** Sarvam Saaras v3
+- **TTS:** Sarvam Bulbul v3, speaker `ritu`, pace 1.0
+- **Language ID (fallback path):** Sarvam `/text-lid`
+- **Embeddings:** Jina embeddings v3, 1024 dim, `task=retrieval.passage` for chunks and `task=retrieval.query` for queries
+- **Chunking:** 800 chars target, 150 chars real overlap, sentence-aware with Devanagari terminator support, timestamp metadata when source provides it
+- **Retrieval:** top-20 cosine + top-20 BM25 fused via RRF (k=60), final top-5 by RRF, grounding floor at cosine 0.20 and mid at 0.35
+- **VAD threshold (idle):** 14
+- **VAD threshold (during playback):** 26
+- **VAD speech-accumulation grace:** 250 ms
+- **VAD continuous-speech-to-record:** 180 ms
+- **VAD silence-to-stop:** 2500 ms
+- **TTS first-phrase early flush:** at 25+ chars on `,;:` for the very first sentence; sentence terminators for the rest
+- **YouTube fetcher:** Edge runtime, 5 InnerTube clients + web scrape + Supadata fallback
+
+### Updated architectural map
+
+```
++------------------------------------------------------------------+
+| BROWSER  (Client Component, /learn page)                         |
+|  - mic + VAD (with playback barge-in)                            |
+|  - IndexedDB-backed lesson vectors                               |
+|  - hybrid retrieval (cosine + BM25 + RRF), client-side           |
+|  - SSE consumption + per-sentence TTS dispatch                   |
+|  - sequential audio playback                                     |
++----------------------------------+-------------------------------+
+                                   |
+                                   v
++------------------------------------------------------------------+
+| VERCEL SERVER ROUTES                                             |
+|  /api/tutor/youtube     Edge. 5 InnerTube clients + scrape +     |
+|                         Supadata fallback.                       |
+|  /api/tutor/transcribe  Sarvam STT for file ingest.              |
+|  /api/tutor/stt         Sarvam STT for voice queries.            |
+|                         Returns userMessage + languageCode.      |
+|  /api/tutor/embed       Jina v3 proxy. task=passage or query.    |
+|  /api/tutor/chat        Groq SSE. Emits token + sentence events. |
+|                         Sarvam M fallback.                       |
+|  /api/tutor/tts         Sarvam TTS. languageCode from STT;       |
+|                         text-lid fallback; script regex final.   |
+|  /api/tutor/topics      Groq + Sarvam fallback. Stratified       |
+|                         sample. Returns title + summary.         |
+|  /api/tutor/quiz        Groq + Sarvam fallback. Anti-trivia.     |
++------------------------------------------------------------------+
+```
+
+### Phase 2 file references
+
+| File | Role |
+|---|---|
+| `src/lib/rag/` | RAG module suite: embedder, chunker, BM25, retrieve, ingest, store, types, hook |
+| `src/lib/audio-sequence.ts` | Sequential audio player + TTS fetch helper |
+| `src/lib/yt-transcript.ts` | Multi-client InnerTube + Supadata fallback |
+| `src/lib/tutor-instructions.ts` | Shared system prompt for chat / topics / quiz |
+| `src/app/api/tutor/{stt,chat,tts,embed}/route.ts` | New focused routes replacing `/voice` |
+| `src/app/api/tutor/youtube/route.ts` | Edge runtime, uses `yt-transcript.ts` |
+| `evals/run.ts`, `evals/golden.json` | Retrieval quality eval harness |
+
+### Phase 2 metrics
+
+| Metric | Phase 1 | Phase 2 |
+|---|---|---|
+| Per-turn embedding work | 3 to 10 s (re-embed every turn) | 0 ms (cached in IndexedDB) |
+| First-load model download | 120 MB Transformers.js | 0 MB (server-side embeddings) |
+| Time to first LLM token | ~2 to 3 s | ~300 to 500 ms |
+| Time to first audio | ~6 to 15 s | ~1.5 to 2 s |
+| Eval recall@k | not measured | 100% (12 queries, English + Hindi) |
+| Embedding model | English-only | Multilingual (89 languages) |
+| Retrieval | Pure cosine | Hybrid cosine + BM25 + RRF + grounding |
+
+### Phase 1 sections superseded
+
+The following sections in the original log are kept for history but no longer reflect the running code:
+
+- Section 7 ("Lightweight RAG Chunk Selector") — replaced by hybrid retrieval in `src/lib/rag/retrieve.ts`.
+- Section 9 ("Hybrid Context Router" with `isGlobalQuery`) — replaced by the grounding confidence flag in retrieval and the stratified-sample approach in `/api/tutor/topics`.
+- Section 6 ("Unlimited TTS Speech Workaround") — still relevant in spirit; the per-sentence dispatch in Phase 2 takes the same idea further by playing earlier sentences while later ones are still being generated.
+- Section 12 ("VAD Acoustic Feedback Protection Guard") — partially superseded; the strict early-return was removed because it also killed user barge-in. Adaptive thresholds (14 idle vs 26 during playback) still suppress speaker spillover.
+- Section 3 ("Dynamic Multilingual Router") — Unicode regex demoted from primary to fallback; Sarvam STT's `language_code` and Sarvam `text-lid` now do the authoritative work.
+
+---
+
+## Phase 1: Original feature log (preserved verbatim)
+
+
 
 ## 🎨 Branding & Aesthetics System
 * **Theme Identity:** Clean, geometric layout inspired by **Ramp.com**.

@@ -25,6 +25,8 @@ interface ChatBody {
 }
 
 const SENTENCE_TERMINATOR = /([.!?।॥…])(\s|$)/;
+const PHRASE_TERMINATOR = /([.!?।॥…,;:])(\s|$)/;
+const FAST_FIRST_MIN_CHARS = 25;
 
 function formatChunks(chunks: IncomingChunk[]): string {
   if (!chunks || chunks.length === 0) return '(no relevant context retrieved)';
@@ -128,22 +130,51 @@ async function fallbackSarvam(messages: any[]): Promise<string> {
   return content.replace(/<think>[\s\S]*?<\/think>\s*/gi, '').trim();
 }
 
-function flushSentences(buffer: string, finalize: boolean): { sentences: string[]; remainder: string } {
+function flushSentences(
+  buffer: string,
+  finalize: boolean,
+  allowFastFirst: boolean,
+): { sentences: string[]; remainder: string; firstFlushUsed: boolean } {
   const sentences: string[] = [];
   let working = buffer;
+  let allowFast = allowFastFirst;
+  let firstFlushUsed = false;
   while (true) {
-    const match = working.match(SENTENCE_TERMINATOR);
+    // For the first emission of a response, accept a phrase break (comma,
+    // semicolon, colon) once the buffer is long enough. Gets audio playing
+    // ~500ms faster on long opening sentences. Subsequent chunks use full
+    // sentence boundaries so the cadence stays natural.
+    const regex = allowFast ? PHRASE_TERMINATOR : SENTENCE_TERMINATOR;
+    const match = working.match(regex);
     if (!match || match.index === undefined) break;
+    if (allowFast && match.index < FAST_FIRST_MIN_CHARS) {
+      // Phrase break too early; wait for a real sentence terminator or more text.
+      const sentenceMatch = working.match(SENTENCE_TERMINATOR);
+      if (!sentenceMatch || sentenceMatch.index === undefined) break;
+      const endIdx = sentenceMatch.index + sentenceMatch[1].length;
+      const sentence = working.slice(0, endIdx).trim();
+      if (sentence) {
+        sentences.push(sentence);
+        firstFlushUsed = true;
+        allowFast = false;
+      }
+      working = working.slice(endIdx).replace(/^\s+/, '');
+      continue;
+    }
     const endIdx = match.index + match[1].length;
     const sentence = working.slice(0, endIdx).trim();
-    if (sentence) sentences.push(sentence);
+    if (sentence) {
+      sentences.push(sentence);
+      firstFlushUsed = true;
+      allowFast = false;
+    }
     working = working.slice(endIdx).replace(/^\s+/, '');
   }
   if (finalize && working.trim().length > 0) {
     sentences.push(working.trim());
     working = '';
   }
-  return { sentences, remainder: working };
+  return { sentences, remainder: working, firstFlushUsed };
 }
 
 export async function POST(req: NextRequest) {
@@ -170,9 +201,15 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       let sentenceBuffer = '';
       let fullText = '';
+      let firstSentenceEmitted = false;
       const emitSentences = (finalize: boolean) => {
-        const { sentences, remainder } = flushSentences(sentenceBuffer, finalize);
+        const { sentences, remainder, firstFlushUsed } = flushSentences(
+          sentenceBuffer,
+          finalize,
+          !firstSentenceEmitted,
+        );
         sentenceBuffer = remainder;
+        if (firstFlushUsed) firstSentenceEmitted = true;
         for (const sentence of sentences) {
           controller.enqueue(sseEvent('sentence', { text: sentence }));
         }

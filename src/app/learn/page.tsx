@@ -911,8 +911,11 @@ function LearnPageInner() {
               acharya
             </span>
             <button
+              type="button"
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="md:hidden p-1 text-slate-400 hover:text-slate-700"
+              title="Close sidebar"
+              aria-label="Close sidebar"
+              className="md:hidden p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1065,14 +1068,19 @@ function LearnPageInner() {
           <div className="flex items-center gap-2 md:gap-3">
             {/* Mobile: hamburger to open source sidebar */}
             <button
+              type="button"
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="md:hidden p-2 -ml-1 text-slate-400 hover:text-slate-700"
+              title="Open sidebar"
+              aria-label="Open sidebar"
+              className="md:hidden p-2 -ml-1 text-slate-400 hover:text-slate-700 cursor-pointer"
             >
               <Menu className="w-5 h-5" />
             </button>
             <button
+              type="button"
               onClick={() => router.push('/')}
-              className="hidden md:flex items-center gap-1.5 text-slate-400 hover:text-slate-700 transition-colors text-xs font-medium"
+              title="Back to all lessons"
+              className="hidden md:flex items-center gap-1.5 text-slate-400 hover:text-slate-700 transition-colors text-xs font-medium cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>All lessons</span>
@@ -1088,8 +1096,11 @@ function LearnPageInner() {
           <div className="flex items-center gap-2">
             {/* Mobile back button */}
             <button
+              type="button"
               onClick={() => router.push('/')}
-              className="md:hidden p-2 text-slate-400 hover:text-slate-700"
+              title="Back to all lessons"
+              aria-label="Back to all lessons"
+              className="md:hidden p-2 text-slate-400 hover:text-slate-700 cursor-pointer"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -1363,10 +1374,10 @@ function LearnPageInner() {
                       type="button"
                       onClick={() => setIsHandsFree(!isHandsFree)}
                       disabled={isProcessing || lessonNotReady}
-                      title={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
+                      title={isHandsFree ? 'Turn off hands-free mode' : 'Turn on hands-free mode (auto-listen)'}
                       aria-label={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
                       aria-pressed={isHandsFree}
-                      className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center shrink-0 transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                      className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition disabled:opacity-40 disabled:cursor-not-allowed ${
                         isHandsFree
                           ? 'bg-[#cfff00] text-slate-950 hover:bg-[#bce600]'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'

@@ -58,8 +58,10 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <span className="text-xl font-black tracking-tight text-slate-900">acharya</span>
           <button
+            type="button"
             onClick={handleNewNotebook}
-            className="flex items-center gap-2 h-9 px-4 bg-slate-950 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-all shadow-sm"
+            title="Start a new lesson"
+            className="flex items-center gap-2 h-9 px-4 bg-slate-950 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold transition-all shadow-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             New lesson
@@ -98,8 +100,10 @@ export default function HomePage() {
             </div>
 
             <button
+              type="button"
               onClick={handleNewNotebook}
-              className="flex items-center gap-2 h-11 px-8 bg-[#cfff00] hover:bg-[#bce600] text-slate-950 rounded-xl text-sm font-bold transition-all shadow-sm border border-slate-300/20 mt-2"
+              title="Start a new lesson"
+              className="flex items-center gap-2 h-11 px-8 bg-[#cfff00] hover:bg-[#bce600] text-slate-950 rounded-xl text-sm font-bold transition-all shadow-sm border border-slate-300/20 mt-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Add your first video
@@ -115,8 +119,10 @@ export default function HomePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* New lesson card */}
               <button
+                type="button"
                 onClick={handleNewNotebook}
-                className="group flex flex-col items-center justify-center gap-3 p-8 h-48 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-2xl transition-all text-slate-400 hover:text-slate-600"
+                title="Start a new lesson"
+                className="group flex flex-col items-center justify-center gap-3 p-8 h-48 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-300 hover:border-slate-400 rounded-2xl transition-all text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <Plus className="w-7 h-7" />
                 <span className="text-sm font-semibold">New lesson</span>
@@ -137,8 +143,11 @@ export default function HomePage() {
                       {SOURCE_LABELS[nb.source]}
                     </div>
                     <button
+                      type="button"
                       onClick={(e) => handleDelete(e, nb.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500"
+                      title="Delete this lesson"
+                      aria-label="Delete lesson"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500 cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

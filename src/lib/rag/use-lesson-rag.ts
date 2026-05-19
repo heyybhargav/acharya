@@ -27,6 +27,12 @@ export interface LessonRagHook {
   runRetrieval: (query: string) => Promise<RetrievalResult | null>;
 }
 
+interface IngestJob {
+  lessonId: string;
+  cancelled: boolean;
+  completed: boolean;
+}
+
 export function useLessonRag(
   lessonId: string | null,
   transcript: string,
@@ -35,21 +41,31 @@ export function useLessonRag(
   const [index, setIndex] = useState<LessonIndex | null>(null);
   const [status, setStatus] = useState<IngestProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const activeIdRef = useRef<string | null>(null);
+  const jobRef = useRef<IngestJob | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!lessonId || !transcript) {
-      activeIdRef.current = null;
       setIndex(null);
       setStatus(null);
       setError(null);
       return;
     }
-    if (activeIdRef.current === lessonId) return;
-    activeIdRef.current = lessonId;
 
-    let cancelled = false;
+    // Skip if we already have a non-cancelled or completed job for this lesson.
+    // This allows React strict-mode's mount → cleanup → mount cycle to restart
+    // the ingest after the first run gets cancelled, while still preventing
+    // genuine duplicate ingests when only transcript/segments references shift.
+    const existingJob = jobRef.current;
+    if (existingJob && existingJob.lessonId === lessonId) {
+      if (existingJob.completed) return;
+      if (!existingJob.cancelled) return;
+      // cancelled and not completed → fall through to restart
+    }
+
+    const myJob: IngestJob = { lessonId, cancelled: false, completed: false };
+    jobRef.current = myJob;
+
     setError(null);
     setStatus(null);
     setIndex(null);
@@ -57,13 +73,14 @@ export function useLessonRag(
     (async () => {
       try {
         const existing = await loadLessonIndex(lessonId);
-        if (cancelled) return;
+        if (myJob.cancelled) return;
         const stale = existing && (
           existing.dim !== EMBEDDING_DIM ||
           existing.model !== EMBEDDING_MODEL ||
           existing.chunks.length === 0
         );
         if (existing && !stale) {
+          myJob.completed = true;
           setIndex(existing);
           setStatus({ phase: 'done' });
           return;
@@ -73,15 +90,16 @@ export function useLessonRag(
         }
         const built = await ingest(
           { lessonId, transcript, segments },
-          (p) => { if (!cancelled) setStatus(p); },
+          (p) => { if (!myJob.cancelled) setStatus(p); },
         );
-        if (cancelled) return;
+        if (myJob.cancelled) return;
         await saveLessonIndex(built);
-        if (cancelled) return;
+        if (myJob.cancelled) return;
+        myJob.completed = true;
         setIndex(built);
         setStatus({ phase: 'done' });
       } catch (e: unknown) {
-        if (cancelled) return;
+        if (myJob.cancelled) return;
         const message = e instanceof Error ? e.message : 'Indexing failed';
         console.error('Lesson RAG indexing failed:', e);
         setError(message);
@@ -89,7 +107,12 @@ export function useLessonRag(
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      // Only mark as cancelled if the work didn't already finish. A completed
+      // job stays cached so subsequent effect re-runs (segments reference
+      // changes, etc.) don't trigger a fresh ingest.
+      if (!myJob.completed) myJob.cancelled = true;
+    };
   }, [lessonId, transcript, segments]);
 
   const runRetrieval = useCallback(async (query: string) => {

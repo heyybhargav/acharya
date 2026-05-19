@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTranscript } from '@/lib/yt-transcript';
 
-export const runtime = 'nodejs';
-export const maxDuration = 30;
+// Edge runtime: different egress IP pool than Node lambdas. YouTube tends to
+// throttle datacenter IPs aggressively for InnerTube calls; Edge functions
+// on Vercel's network often get through where Node functions get blocked.
+export const runtime = 'edge';
 
 export async function POST(req: NextRequest) {
   try {

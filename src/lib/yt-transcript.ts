@@ -101,12 +101,49 @@ async function tryInnerTubeClient(videoId: string, client: InnerTubeClient): Pro
         'X-YouTube-Client-Name': client.name,
         'X-YouTube-Client-Version': client.version,
         'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.youtube.com',
+        'Referer': `https://www.youtube.com/watch?v=${videoId}`,
       },
       body: JSON.stringify(body),
     });
     if (!res.ok) return null;
     const data = await res.json();
     const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!Array.isArray(tracks) || tracks.length === 0) return null;
+    return tracks as RawCaptionTrack[];
+  } catch {
+    return null;
+  }
+}
+
+async function tryWebPageScrape(videoId: string): Promise<RawCaptionTrack[] | null> {
+  try {
+    const res = await fetch(`https://www.youtube.com/watch?v=${videoId}&hl=en`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cookie': 'CONSENT=YES+cb.20240101-00-p0.en+FX',
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (html.includes('class="g-recaptcha"')) return null;
+    const token = 'var ytInitialPlayerResponse = ';
+    const start = html.indexOf(token);
+    if (start === -1) return null;
+    const jsonStart = start + token.length;
+    let depth = 0;
+    let end = -1;
+    for (let i = jsonStart; i < html.length; i++) {
+      if (html[i] === '{') depth++;
+      else if (html[i] === '}') {
+        depth--;
+        if (depth === 0) { end = i + 1; break; }
+      }
+    }
+    if (end === -1) return null;
+    const player = JSON.parse(html.slice(jsonStart, end));
+    const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!Array.isArray(tracks) || tracks.length === 0) return null;
     return tracks as RawCaptionTrack[];
   } catch {
@@ -168,36 +205,70 @@ async function fetchCaptionXml(baseUrl: string, userAgent: string, fmt: string):
   }
 }
 
+async function tryTrack(track: RawCaptionTrack, userAgent: string, preferredLang: string): Promise<TranscriptItem[] | null> {
+  if (!track?.baseUrl) return null;
+  const lang = track.languageCode || preferredLang;
+  for (const fmt of ['srv3', 'srv1']) {
+    const xml = await fetchCaptionXml(track.baseUrl, userAgent, fmt);
+    if (!xml) continue;
+    const items = fmt === 'srv3' ? parseSrv3(xml, lang) : parseClassic(xml, lang);
+    if (items.length > 0) return items;
+  }
+  return null;
+}
+
+function pickTrack(tracks: RawCaptionTrack[], preferredLang: string): RawCaptionTrack | undefined {
+  return (
+    tracks.find(t => t.languageCode === preferredLang) ||
+    tracks.find(t => t.languageCode?.startsWith(preferredLang)) ||
+    tracks[0]
+  );
+}
+
 export async function fetchTranscript(urlOrId: string, preferredLang = 'en'): Promise<TranscriptItem[]> {
   const videoId = extractVideoId(urlOrId);
   const errors: string[] = [];
 
+  // First pass: try each InnerTube client.
   for (const client of CLIENTS) {
     const tracks = await tryInnerTubeClient(videoId, client);
     if (!tracks) {
       errors.push(`${client.name}: no caption tracks`);
       continue;
     }
-    const track =
-      tracks.find(t => t.languageCode === preferredLang) ||
-      tracks.find(t => t.languageCode?.startsWith(preferredLang)) ||
-      tracks[0];
-    if (!track?.baseUrl) {
-      errors.push(`${client.name}: track has no baseUrl`);
+    const track = pickTrack(tracks, preferredLang);
+    if (!track) {
+      errors.push(`${client.name}: no usable track`);
       continue;
     }
-    const lang = track.languageCode || preferredLang;
-    for (const fmt of ['srv3', 'srv1']) {
-      const xml = await fetchCaptionXml(track.baseUrl, client.userAgent, fmt);
-      if (!xml) continue;
-      const items = fmt === 'srv3' ? parseSrv3(xml, lang) : parseClassic(xml, lang);
-      if (items.length > 0) return items;
-    }
+    const items = await tryTrack(track, client.userAgent, preferredLang);
+    if (items && items.length > 0) return items;
     errors.push(`${client.name}: caption xml empty`);
+  }
+
+  // Second pass: scrape the watch page HTML for the player response.
+  // Sometimes works when the InnerTube API is throttled, because the watch
+  // page hits a different YouTube backend.
+  const scrapeTracks = await tryWebPageScrape(videoId);
+  if (scrapeTracks) {
+    const track = pickTrack(scrapeTracks, preferredLang);
+    if (track) {
+      const items = await tryTrack(
+        track,
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        preferredLang,
+      );
+      if (items && items.length > 0) return items;
+      errors.push('WEB_SCRAPE: caption xml empty');
+    } else {
+      errors.push('WEB_SCRAPE: no usable track');
+    }
+  } else {
+    errors.push('WEB_SCRAPE: page returned no player response');
   }
 
   throw new Error(
     `Could not fetch a transcript for this video from the server (${errors.join('; ')}). ` +
-    `YouTube may be throttling our IP. Try pasting the transcript manually.`,
+    `YouTube may be blocking our deployment IP. Paste the transcript manually, or upload the video file.`,
   );
 }

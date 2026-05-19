@@ -17,7 +17,7 @@ import {
 
 export default function LearnPage() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center text-slate-400 text-sm">Loading...</div>}>
+    <Suspense fallback={<div className="flex h-dvh items-center justify-center text-slate-400 text-sm">Loading...</div>}>
       <LearnPageInner />
     </Suspense>
   );
@@ -888,7 +888,7 @@ function LearnPageInner() {
   };
 
   return (
-    <div className="flex h-screen bg-white text-slate-900 overflow-hidden font-sans antialiased">
+    <div className="flex h-dvh bg-white text-slate-900 overflow-hidden font-sans antialiased">
       
       {/* Mobile Sidebar Backdrop */}
       {isMobileSidebarOpen && (
@@ -1114,7 +1114,7 @@ function LearnPageInner() {
             >
               <div
                 className="max-w-3xl mx-auto space-y-6"
-                style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom))' }}
+                style={{ paddingBottom: 'calc(8rem + env(safe-area-inset-bottom))' }}
               >
                 {messages.length === 0 ? (
                   <div className="h-[65vh] flex flex-col items-center justify-center text-center space-y-6 max-w-lg mx-auto">
@@ -1255,7 +1255,7 @@ function LearnPageInner() {
             {/* FLOATING CONTROLLER PILL */}
             <div
               className="absolute md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[380px] max-w-[460px]"
-              style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))' }}
+              style={{ bottom: 'max(1.25rem, calc(env(safe-area-inset-bottom) + 1rem))' }}
             >
               {(() => {
                 if (lessonRag.error && transcript && !lessonRag.ready) {

@@ -1,5 +1,5 @@
 // Jina v3 embeddings, called via /api/tutor/embed in the browser and directly in Node.
-// We never bundle a model into the browser — embeddings are a network call.
+// We never bundle a model into the browser. Embeddings are a network call.
 
 export const EMBEDDING_MODEL = 'jina-embeddings-v3';
 export const EMBEDDING_DIM = 1024;

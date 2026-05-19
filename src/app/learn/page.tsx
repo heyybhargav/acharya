@@ -200,7 +200,7 @@ function LearnPageInner() {
 
   const startRecording = async () => {
     if (!transcript) {
-      alert("Load a video or paste a transcript first — Acharya needs something to learn from!");
+      alert("Load a video or paste a transcript first. Acharya needs something to learn from.");
       return;
     }
     if (isRecording || isProcessing) return;
@@ -1110,7 +1110,10 @@ function LearnPageInner() {
               className="flex-1 overflow-y-auto p-8 space-y-6" 
               ref={chatScrollContainerRef}
             >
-              <div className="max-w-3xl mx-auto space-y-6 pb-28">
+              <div
+                className="max-w-3xl mx-auto space-y-6"
+                style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom))' }}
+              >
                 {messages.length === 0 ? (
                   <div className="h-[65vh] flex flex-col items-center justify-center text-center space-y-6 max-w-lg mx-auto">
                     <div className="w-16 h-16 bg-white rounded-xl border border-slate-200 flex items-center justify-center shadow-sm mb-2">
@@ -1121,7 +1124,7 @@ function LearnPageInner() {
                         What do you want to learn today?
                       </h3>
                       <p className="text-sm md:text-base text-slate-500 max-w-md mx-auto leading-relaxed">
-                        Paste a YouTube link or upload a lecture. Then just ask — Acharya has watched it for you.
+                        Paste a YouTube link or upload a lecture. Then just ask. Acharya has watched it for you.
                       </p>
                       <Button 
                         className="md:hidden mt-6 h-10 px-6 bg-[#cfff00] hover:bg-[#bce600] text-slate-950 font-bold text-sm rounded-xl shadow-sm border border-slate-300/20"
@@ -1248,7 +1251,10 @@ function LearnPageInner() {
             </div>
 
             {/* FLOATING CONTROLLER PILL */}
-            <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[420px]">
+            <div
+              className="absolute md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[420px]"
+              style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))' }}
+            >
               {(() => {
                 if (lessonRag.error && transcript && !lessonRag.ready) {
                   return (
@@ -1350,7 +1356,7 @@ function LearnPageInner() {
                         <span className="h-1.5 w-1.5 rounded-full bg-[#cfff00]"></span>
                         Listening...
                       </span>
-                      <span className="text-slate-400 text-[10px] font-normal leading-tight hidden sm:block">Just talk — Acharya will hear you</span>
+                      <span className="text-slate-400 text-[10px] font-normal leading-tight hidden sm:block">Just talk. Acharya will hear you.</span>
                     </div>
                   ) : isRecording ? (
                     <div className="flex items-center gap-2 text-red-400">

@@ -1,5 +1,5 @@
-// Notebook persistence via localStorage
-// No database needed — all session data lives in the browser
+// Notebook persistence via localStorage.
+// No database needed; all session data lives in the browser.
 
 export interface NotebookSegment {
   text: string;
@@ -76,7 +76,7 @@ export function saveNotebook(notebook: Notebook): Notebook {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(notebooks));
   } catch {
-    console.warn('localStorage full — notebooks not saved');
+    console.warn('localStorage full, notebooks not saved');
   }
   return notebook;
 }
@@ -115,7 +115,7 @@ export function updateNotebook(id: string, patch: Partial<Notebook>): Notebook |
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(notebooks));
   } catch {
-    console.warn('localStorage full — notebook not updated');
+    console.warn('localStorage full, notebook not updated');
   }
   return updated;
 }

@@ -691,11 +691,11 @@ function LearnPageInner() {
     if (!file) return;
 
     setIsTranscribing(true);
-    setTranscriptionProgress("Reading file...");
+    setTranscriptionProgress("Reading file");
 
     try {
       // Decode the uploaded file using Web Audio API to handle slicing
-      setTranscriptionProgress("Decoding and optimizing audio track (16kHz Mono)...");
+      setTranscriptionProgress("Optimizing audio");
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const arrayBuffer = await file.arrayBuffer();
       const rawAudioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
@@ -727,7 +727,7 @@ function LearnPageInner() {
         const endFrame = Math.min(audioBuffer.length, (i + 1) * chunkSizeSeconds * sampleRate);
         const chunkLength = endFrame - startFrame;
         
-        setTranscriptionProgress(`Transcribing block ${i + 1} of ${totalChunks} (${Math.round((i / totalChunks) * 100)}%)...`);
+        setTranscriptionProgress(`Transcribing ${i + 1}/${totalChunks}`);
         
         // Create an AudioBuffer for this segment using the open audioCtx
         const chunkBuffer = audioCtx.createBuffer(
@@ -778,7 +778,7 @@ function LearnPageInner() {
         throw new Error('Transcription completed but resulted in empty text.');
       }
       
-      setTranscriptionProgress("Acharya is processing concepts...");
+      setTranscriptionProgress("Extracting topics");
       const finalTranscript = fullTranscript;
       setTranscript(finalTranscript);
       handleExtractTopics(finalTranscript);
@@ -933,19 +933,21 @@ function LearnPageInner() {
                 ref={fileInputRef}
                 disabled={isTranscribing || isFetchingYoutube}
               />
-              <Button 
+              <Button
                 type="button"
-                variant="outline" 
-                className="w-full h-10 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium justify-center rounded-md shadow-sm transition-all"
+                variant="outline"
+                className="w-full h-10 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-medium justify-center rounded-md shadow-sm transition-all min-w-0"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isTranscribing || isFetchingYoutube}
               >
                 {isTranscribing ? (
-                  <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin text-slate-600" />
+                  <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin text-slate-600 shrink-0" />
                 ) : (
-                  <Upload className="w-3.5 h-3.5 mr-2 text-slate-600" />
+                  <Upload className="w-3.5 h-3.5 mr-2 text-slate-600 shrink-0" />
                 )}
-                {isTranscribing ? transcriptionProgress : "Upload a video or audio file"}
+                <span className="truncate">
+                  {isTranscribing ? transcriptionProgress : "Upload a video or audio file"}
+                </span>
               </Button>
             </div>
 
@@ -1252,7 +1254,7 @@ function LearnPageInner() {
 
             {/* FLOATING CONTROLLER PILL */}
             <div
-              className="absolute md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[420px]"
+              className="absolute md:bottom-6 left-1/2 -translate-x-1/2 z-20 w-[calc(100%-2rem)] md:w-auto md:min-w-[380px] max-w-[460px]"
               style={{ bottom: 'max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))' }}
             >
               {(() => {
@@ -1297,87 +1299,82 @@ function LearnPageInner() {
                     </div>
                   );
                 }
+                const buttonState: 'recording' | 'processing' | 'speaking' | 'idle' =
+                  isRecording ? 'recording'
+                  : isProcessing ? 'processing'
+                  : isPlaying ? 'speaking'
+                  : 'idle';
+                const lessonNotReady = !!transcript && !lessonRag.ready;
+                const primaryDisabled =
+                  buttonState === 'processing' ||
+                  lessonNotReady ||
+                  (isHandsFree && buttonState === 'idle');
+                const primaryClass =
+                  buttonState === 'recording'
+                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_0_4px_rgba(239,68,68,0.25)]'
+                    : primaryDisabled
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950';
+                const primaryOnClick = isRecording ? stopRecording : startRecording;
+                const statusLine =
+                  buttonState === 'recording' ? 'Listening to you'
+                  : buttonState === 'processing' ? (phaseLabel(processingPhase) || 'Working')
+                  : buttonState === 'speaking' ? 'Acharya is speaking'
+                  : isHandsFree ? 'Hands-free is on'
+                  : lessonNotReady ? 'Preparing this lesson'
+                  : 'Tap to talk';
+                const statusColor =
+                  buttonState === 'recording' ? 'text-red-400'
+                  : buttonState === 'speaking' ? 'text-slate-200'
+                  : isHandsFree ? 'text-[#cfff00]'
+                  : 'text-slate-300';
+                const showLiveDot = buttonState === 'recording' || (isHandsFree && buttonState === 'idle');
                 return (
-              <div className="bg-slate-950 text-white py-3 px-3 md:px-4 rounded-full shadow-lg flex items-center gap-2 md:gap-4 transition-all duration-300 w-full md:min-w-[340px] border border-slate-800">
-                <Button
-                  size="icon"
-                  className={`w-10 h-10 rounded-full transition-all duration-200 relative shrink-0 ${
-                    isRecording
-                      ? 'bg-red-500 hover:bg-red-600 text-white'
-                      : 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950'
-                  }`}
-                  onClick={toggleRecording}
-                  disabled={isProcessing || isHandsFree || (!!transcript && !lessonRag.ready)}
-                >
-                  {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </Button>
-
-                {/* Hands-Free Mode Toggle */}
-                <Button
-                  size="icon"
-                  className={`w-10 h-10 rounded-full transition-all duration-200 relative shrink-0 ${
-                    isHandsFree
-                      ? 'bg-[#cfff00] hover:bg-[#bce600] text-slate-950'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
-                  }`}
-                  onClick={() => setIsHandsFree(!isHandsFree)}
-                  title={isHandsFree ? "Disable Hands-Free" : "Enable Hands-Free"}
-                  disabled={isProcessing || (!!transcript && !lessonRag.ready)}
-                >
-                  <Headphones className="w-4 h-4" />
-                </Button>
-
-                {/* Floating Pill Playback Controls */}
-                {isPlaying && (
-                  <>
+                  <div className="bg-slate-950 text-white py-2 pl-2 pr-3 md:py-2.5 md:pl-2.5 md:pr-4 rounded-full shadow-lg flex items-center gap-2.5 md:gap-3 border border-slate-800 w-full">
                     <Button
                       size="icon"
-                      className="w-10 h-10 rounded-full bg-[#cfff00] hover:bg-[#bce600] text-slate-950 transition-all duration-200 shrink-0 flex items-center justify-center"
-                      onClick={handleTogglePlayPause}
-                      title={isPaused ? "Resume Acharya Voice" : "Pause Acharya Voice"}
+                      onClick={primaryOnClick}
+                      disabled={primaryDisabled}
+                      title={isRecording ? 'Stop recording' : 'Tap to talk'}
+                      aria-label={isRecording ? 'Stop recording' : 'Start recording'}
+                      className={`w-11 h-11 md:w-12 md:h-12 rounded-full shrink-0 flex items-center justify-center transition-all duration-200 ${primaryClass}`}
                     >
-                      {isPaused ? <Play className="w-4 h-4 text-slate-950" /> : <Pause className="w-4 h-4 text-slate-950" />}
+                      {buttonState === 'recording' ? <Square className="w-4 h-4 md:w-5 md:h-5" />
+                        : buttonState === 'processing' ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin" />
+                        : <Mic className="w-4 h-4 md:w-5 md:h-5" />}
                     </Button>
-                    <Button
-                      size="icon"
-                      className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white transition-all duration-200 shrink-0 flex items-center justify-center"
-                      onClick={stopActiveAudio}
-                      title="Stop Acharya Voice"
-                    >
-                      <Square className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
 
-                <div className="text-xs font-semibold text-left select-none pr-2 md:pr-4 flex-1 min-w-0">
-                  {isHandsFree ? (
-                    <div className="flex flex-col">
-                      <span className="text-[#cfff00] font-extrabold flex items-center gap-1.5 animate-pulse">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#cfff00]"></span>
-                        Listening...
-                      </span>
-                      <span className="text-slate-400 text-[10px] font-normal leading-tight hidden sm:block">Just talk. Acharya will hear you.</span>
+                    <div className="flex-1 min-w-0 select-none">
+                      <div className={`text-xs md:text-sm font-semibold leading-tight flex items-center gap-1.5 ${statusColor}`}>
+                        {showLiveDot && (
+                          <span className="relative flex h-1.5 w-1.5 shrink-0">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 bg-current"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current"></span>
+                          </span>
+                        )}
+                        <span className="truncate">{statusLine}</span>
+                      </div>
+                      {buttonState === 'idle' && !isHandsFree && !lessonNotReady && (
+                        <div className="text-[10px] text-slate-500 leading-tight mt-0.5 hidden sm:block">Or hold space</div>
+                      )}
                     </div>
-                  ) : isRecording ? (
-                    <div className="flex items-center gap-2 text-red-400">
-                      <span className="relative flex h-2 w-2 shrink-0">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                      </span>
-                      <span>Recording...</span>
-                    </div>
-                  ) : processingPhase ? (
-                    <div className="flex items-center gap-2 text-slate-200">
-                      <Loader2 className="w-3 h-3 animate-spin text-[#cfff00] shrink-0" />
-                      <span className="truncate">{phaseLabel(processingPhase)}…</span>
-                    </div>
-                  ) : (
-                    <span className="text-slate-300 truncate">
-                      <span className="hidden sm:inline">Hold space or </span>Tap to talk
-                    </span>
-                  )}
-                </div>
-              </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsHandsFree(!isHandsFree)}
+                      disabled={isProcessing || lessonNotReady}
+                      title={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
+                      aria-label={isHandsFree ? 'Turn off hands-free' : 'Turn on hands-free'}
+                      aria-pressed={isHandsFree}
+                      className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center shrink-0 transition disabled:opacity-40 disabled:cursor-not-allowed ${
+                        isHandsFree
+                          ? 'bg-[#cfff00] text-slate-950 hover:bg-[#bce600]'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      <Headphones className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                    </button>
+                  </div>
                 );
               })()}
             </div>

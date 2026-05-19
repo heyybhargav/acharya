@@ -22,6 +22,7 @@ interface ChatBody {
   chunks: IncomingChunk[];
   history: ChatMessage[];
   groundingConfidence?: 'high' | 'medium' | 'low';
+  languageCode?: string | null;
 }
 
 const SENTENCE_TERMINATOR = /([.!?।॥…])(\s|$)/;
@@ -43,7 +44,11 @@ function formatTimestamp(ms: number): string {
   return `${mm}:${ss}`;
 }
 
-function buildSystemPrompt(chunks: IncomingChunk[], grounding: 'high' | 'medium' | 'low'): string {
+function buildSystemPrompt(
+  chunks: IncomingChunk[],
+  grounding: 'high' | 'medium' | 'low',
+  languageCode?: string | null,
+): string {
   const context = formatChunks(chunks);
   const groundingHint =
     grounding === 'low'
@@ -52,13 +57,17 @@ function buildSystemPrompt(chunks: IncomingChunk[], grounding: 'high' | 'medium'
       ? 'NOTE: The retrieved context is only loosely related. Be careful not to overstate certainty.'
       : 'The retrieved context is highly relevant. Answer confidently from it.';
 
+  const languageHint = languageCode
+    ? `LANGUAGE: The user is speaking in ${languageCode}. Respond in the same language and script. Do not mix scripts.`
+    : '';
+
   return `${TUTOR_INSTRUCTIONS}
 
 --- RETRIEVED CONTEXT FROM THE LESSON ---
 ${context}
 --- END CONTEXT ---
 
-${groundingHint}`;
+${groundingHint}${languageHint ? '\n\n' + languageHint : ''}`;
 }
 
 function sseEvent(event: string, data: unknown): Uint8Array {
@@ -185,12 +194,12 @@ export async function POST(req: NextRequest) {
     return new Response('Invalid JSON body', { status: 400 });
   }
 
-  const { userMessage, chunks = [], history = [], groundingConfidence = 'medium' } = body;
+  const { userMessage, chunks = [], history = [], groundingConfidence = 'medium', languageCode } = body;
   if (!userMessage || typeof userMessage !== 'string') {
     return new Response('userMessage required', { status: 400 });
   }
 
-  const systemPrompt = buildSystemPrompt(chunks, groundingConfidence);
+  const systemPrompt = buildSystemPrompt(chunks, groundingConfidence, languageCode);
   const messages = [
     { role: 'system', content: systemPrompt },
     ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),

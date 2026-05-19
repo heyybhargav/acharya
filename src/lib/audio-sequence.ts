@@ -97,16 +97,18 @@ export class AudioSequence {
   }
 }
 
-export async function fetchTtsAudios(text: string): Promise<string[]> {
+export async function fetchTtsAudios(text: string, languageCode?: string | null): Promise<string[]> {
   try {
+    const body: Record<string, string> = { text };
+    if (languageCode) body.languageCode = languageCode;
     const res = await fetch('/api/tutor/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data.audios) ? data.audios.filter((a: any) => typeof a === 'string' && a) : [];
+    return Array.isArray(data.audios) ? data.audios.filter((a: unknown) => typeof a === 'string' && a) : [];
   } catch {
     return [];
   }

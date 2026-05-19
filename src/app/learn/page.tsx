@@ -510,7 +510,9 @@ function LearnPageInner() {
         const err = await sttRes.json().catch(() => ({ error: 'STT failed' }));
         throw new Error(err.error || 'STT failed');
       }
-      const { userMessage } = await sttRes.json();
+      const sttData = await sttRes.json();
+      const userMessage: string = sttData.userMessage;
+      const detectedLanguage: string | null = typeof sttData.languageCode === 'string' ? sttData.languageCode : null;
       if (!userMessage) throw new Error('Could not transcribe your audio');
 
       updateMessage(userMsgId, { text: userMessage, phase: undefined });
@@ -550,6 +552,7 @@ function LearnPageInner() {
           chunks: retrieval.chunks.map(c => ({ index: c.index, text: c.text, startMs: c.startMs, endMs: c.endMs })),
           history,
           groundingConfidence: retrieval.groundingConfidence,
+          languageCode: detectedLanguage,
         }),
       });
       if (!chatRes.ok || !chatRes.body) {
@@ -608,7 +611,7 @@ function LearnPageInner() {
             updateMessage(tutorMsgId, { text: fullText });
           } else if (eventName === 'sentence' && typeof payload.text === 'string') {
             const sentence = payload.text;
-            const ttsPromise = fetchTtsAudios(sentence);
+            const ttsPromise = fetchTtsAudios(sentence, detectedLanguage);
             enqueueChain = enqueueChain.then(async () => {
               const audios = await ttsPromise;
               for (const b64 of audios) {

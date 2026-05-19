@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
     if (!userMessage) {
       return NextResponse.json({ error: 'Could not extract text from audio' }, { status: 422 });
     }
-    return NextResponse.json({ userMessage });
+    const languageCode = typeof data.language_code === 'string' ? data.language_code : null;
+    return NextResponse.json({ userMessage, languageCode });
   } catch (error: any) {
     console.error('STT route error:', error);
     return NextResponse.json({ error: error.message || 'STT failure' }, { status: 500 });

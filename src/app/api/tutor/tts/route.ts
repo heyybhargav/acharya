@@ -15,9 +15,29 @@ const SCRIPT_RANGES: { range: RegExp; code: string }[] = [
   { range: /[଀-୿]/, code: 'or-IN' },
 ];
 
-function detectLanguageCode(text: string): string {
+function detectLanguageCodeViaScript(text: string): string {
   for (const { range, code } of SCRIPT_RANGES) if (range.test(text)) return code;
   return 'en-IN';
+}
+
+async function detectLanguageViaSarvam(text: string): Promise<string | null> {
+  try {
+    const res = await fetch('https://api.sarvam.ai/text-lid', {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': config.sarvamApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ input: text.slice(0, 1000) }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data.language_code === 'string' && data.language_code.length > 0
+      ? data.language_code
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function splitIntoSafeChunks(text: string, maxLen = 450): string[] {
@@ -52,7 +72,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'text is required' }, { status: 400 });
     }
 
-    const target = languageCode || detectLanguageCode(text);
+    // Prefer the explicit language code the client sent (carried from STT).
+    // If absent, ask Sarvam's text-lid for authoritative detection.
+    // Fall back to script-range regex if both miss.
+    const target =
+      (typeof languageCode === 'string' && languageCode.length > 0 ? languageCode : null) ||
+      (await detectLanguageViaSarvam(text)) ||
+      detectLanguageCodeViaScript(text);
     const inputs = splitIntoSafeChunks(text);
     if (inputs.length === 0) {
       return NextResponse.json({ error: 'empty text' }, { status: 400 });

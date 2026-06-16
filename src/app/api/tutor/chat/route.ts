@@ -131,7 +131,7 @@ async function fallbackSarvam(messages: any[]): Promise<string> {
       'api-subscription-key': config.sarvamApiKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model: 'sarvam-m', messages }),
+    body: JSON.stringify({ model: 'sarvam-30b', messages }),
   });
   if (!res.ok) throw new Error(`Sarvam fallback failed: ${res.status} ${await res.text().catch(() => '')}`);
   const data = await res.json();

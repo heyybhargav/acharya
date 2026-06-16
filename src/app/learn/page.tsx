@@ -1002,12 +1002,15 @@ function LearnPageInner() {
               </Button>
             </div>
 
-            {/* YouTube Ingestion */}
+            {/* YouTube Ingestion — disabled: YouTube blocks Vercel datacenter IPs and the
+                Supadata fallback needs a valid SUPADATA_API_KEY (see src/lib/yt-transcript.ts).
+                Re-enable by flipping `false` to `true` once a working key is set. */}
+            {false && (
             <div>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <input 
-                    placeholder="Or paste a YouTube link..." 
+                  <input
+                    placeholder="Or paste a YouTube link..."
                     value={youtubeUrl}
                     onChange={(e) => setYoutubeUrl(e.target.value)}
                     onKeyDown={(e) => {
@@ -1021,8 +1024,8 @@ function LearnPageInner() {
                   />
                   <Video className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3.5" />
                 </div>
-                <Button 
-                  type="button" 
+                <Button
+                  type="button"
                   className="h-10 bg-slate-950 hover:bg-slate-900 text-white rounded-md text-xs font-semibold shadow-sm transition-all px-3.5"
                   onClick={handleFetchYoutube}
                   disabled={!youtubeUrl || isFetchingYoutube || isTranscribing}
@@ -1035,6 +1038,7 @@ function LearnPageInner() {
                 </Button>
               </div>
             </div>
+            )}
 
             {/* Paste Transcript */}
             <Textarea 

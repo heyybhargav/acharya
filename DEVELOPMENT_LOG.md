@@ -98,7 +98,7 @@ The first version of the app shipped with a "Proper RAG" claim that did not surv
 ### Updated configuration
 
 - **LLM (primary):** `llama-3.3-70b-versatile` via Groq, streaming SSE
-- **LLM (fallback):** `sarvam-m` via Sarvam (`/v1/chat/completions`)
+- **LLM (fallback):** `sarvam-105b-conversations` via Sarvam (`/v1/chat/completions`)
 - **STT:** Sarvam Saaras v3
 - **TTS:** Sarvam Bulbul v3, speaker `ritu`, pace 1.0
 - **Language ID (fallback path):** Sarvam `/text-lid`
@@ -135,7 +135,7 @@ The first version of the app shipped with a "Proper RAG" claim that did not surv
 |                         Returns userMessage + languageCode.      |
 |  /api/tutor/embed       Jina v3 proxy. task=passage or query.    |
 |  /api/tutor/chat        Groq SSE. Emits token + sentence events. |
-|                         Sarvam M fallback.                       |
+|                         Sarvam 105B fallback.                    |
 |  /api/tutor/tts         Sarvam TTS. languageCode from STT;       |
 |                         text-lid fallback; script regex final.   |
 |  /api/tutor/topics      Groq + Sarvam fallback. Stratified       |
@@ -247,7 +247,7 @@ The following sections in the original log are kept for history but no longer re
   * Configured a robust `try-catch` wrapper around **all** Mastra LLM calls across all routes (`/api/tutor/voice`, `/api/tutor/topics`, and `/api/tutor/quiz`).
   * If Groq returns a `429 Rate Limit` or standard API error, the system **automatically intercepts the exception** without crashing.
   * Instantly triggers a fallback POST request to Sarvam's official Multilingual Chat Completions API (`https://api.sarvam.ai/v1/chat/completions`) using the highly stable, pre-configured `SARVAM_API_KEY`.
-  * Utilizes Sarvam's natively fluent **`sarvam-m`** model, which has built-in chain-of-thought `<think>` capabilities for peak logical reasoning.
+  * Utilizes Sarvam's natively fluent **`sarvam-105b-conversations`** model. Sarvam has since retired `sarvam-m` and `sarvam-30b`; the model id now lives in `src/config/sarvam.ts` so the next deprecation is a one-line change.
   * Cleans the output dynamically to remove reasoning blocks before passing the response to the TTS engine.
   * **Result:** Acharya achieves **100% uninterrupted operational availability** and absolute premium GPT-4/Llama-class logical reasoning for free, with zero downtime!
 

@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       const sarvamRes = await fetch('https://api.sarvam.ai/v1/chat/completions', {
         method: 'POST',
         headers: { 'api-subscription-key': config.sarvamApiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'sarvam-m', messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: config.sarvamChatModel, messages: [{ role: 'user', content: prompt }] }),
       });
       if (!sarvamRes.ok) {
         throw new Error('Both Groq and Sarvam fallback failed: ' + await sarvamRes.text());

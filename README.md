@@ -47,7 +47,7 @@ Once the lesson is ingested, the user holds space (or enables hands-free) and sp
 │  /api/tutor/embed      Jina v3 proxy. task=passage or query.   │
 │  /api/tutor/chat       Groq Llama 3.3 70B SSE.                 │
 │                        Emits token + sentence-boundary events. │
-│                        Sarvam M (sarvam-m) fallback.           │
+│                        Sarvam 105B conversations fallback.     │
 │  /api/tutor/tts        Sarvam TTS (bulbul:v3).                 │
 │                        Sarvam text-lid fallback for language.  │
 │  /api/tutor/topics     Groq with stratified sample.            │
@@ -64,7 +64,7 @@ Once the lesson is ingested, the user holds space (or enables hands-free) and sp
 |---|---|---|
 | Framework | Next.js 16 (App Router, Turbopack) | App Router suits the SSE streaming need; Turbopack dev compile speed |
 | LLM (primary) | Groq Llama 3.3 70B Versatile | Fastest hosted Llama 3, generous free tier, decent multilingual reasoning |
-| LLM (fallback) | Sarvam M (`sarvam-m`) | OpenAI-compatible, multilingual, shares Sarvam API key |
+| LLM (fallback) | Sarvam 105B (`sarvam-105b-conversations`) | OpenAI-compatible, multilingual, shares Sarvam API key. The `-conversations` variant answers directly; plain `sarvam-105b` burns tokens on `reasoning_content` and fences its JSON |
 | STT | Sarvam Saaras v3 | Best-in-class for Indian languages, returns `language_code` |
 | TTS | Sarvam Bulbul v3 | Native Indian-language voices, accepts BCP-47 codes |
 | Language ID | Sarvam text-lid (fallback only) | Authoritative when STT signal is missing |

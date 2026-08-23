@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'sarvam-m',
+          model: config.sarvamChatModel,
           messages: [
             {
               role: 'user',
